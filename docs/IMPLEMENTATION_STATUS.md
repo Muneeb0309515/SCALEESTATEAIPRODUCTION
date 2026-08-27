@@ -21,7 +21,7 @@ The application structure follows the approved **Next.js frontend**, **FastAPI/P
 
 The current website intentionally shows **UNKNOWN**, **INSUFFICIENT_DATA**, and **CONFIGURATION REQUIRED** rather than producing sample property records, owner data, market values, buyer records, deal outcomes, contact details, or financial values. This protects the required provenance model and avoids representing invented values as production information.
 
-The schema contains organization memberships, row-level access policies for key records, document-version metadata, and an immutable audit-log trigger. These migration artifacts must be run only against a verified direct Supabase project. The configured URL did not validate as a project API endpoint, so no database schema has been applied and no data has been written.
+The schema contains organization memberships, row-level access policies for key records, document-version metadata, and an immutable audit-log trigger. These migration artifacts must be run only against a verified direct Supabase project. The application requires an explicit successful project-validation flag in addition to server-side credentials before any persistence or document operation is enabled. The configured URL did not validate as a project API endpoint, so no database schema has been applied and no data has been written.
 
 ## Documented Design Inconsistency
 

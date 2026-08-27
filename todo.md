@@ -36,3 +36,18 @@
 - [x] Implement deterministic buyer-match calculation with the documented weights, retained factor scores, matched reasons, failed criteria, and configurable confidence thresholds.
 - [x] Document the source-of-truth alignment, activated safeguards, unresolved integration requirements, and buyer-weight normalization required by the current implementation.
 - [x] Add API-level regression coverage for verified-only AI inputs, AI-estimate exclusion from deterministic ARV, and fail-closed document-upload access.
+- [x] Add database migration artifacts for saved searches, usage-ready subscriptions, user-reviewable AI drafts, and versioned document-access records.
+- [x] Add fail-closed backend integration guards that prevent unconfigured property search and document actions from manufacturing data or performing unauthenticated operations.
+- [x] Require an explicit validated-project state before any Supabase persistence or secure-document route can represent its connection as available.
+- [x] Add a fail-closed Supabase Auth and organization-membership backend boundary, plus a clear web access state while direct project authentication remains unconfigured.
+- [x] Add organization-scoped repository and protected FastAPI contracts for property, deal, seller, buyer, task, document, activity, and audit data operations.
+- [x] Add configurable weighted score, risk classification, and final deal classification contracts that reject mismatched factors and return configuration-required states where the source rules are undefined.
+- [x] Add approved property-intelligence, sales-history, listing-history, verified-contact-availability, and saved-search endpoint contracts with provider-safe and organization-scoped access boundaries.
+- [x] Add regression coverage confirming property discovery and research routes remain protected until authenticated scope and verified data-provider configuration are available.
+- [x] Add protected seller-outreach, follow-up, structured buyer-criteria, buyer-distribution, buyer-offer, transaction, and closing API contracts with audit/activity handoffs and provider-safe no-send behavior.
+- [x] Add an approved provider-independent canonical-property and adapter abstraction that preserves origin and update time without fabricating undocumented RapidAPI or BatchData endpoint behavior.
+- [x] Align unconfigured document-storage wording and configuration guards to the approved S3 architecture without storing document bytes in the project filesystem.
+- [x] Enforce organization ownership checks before dependent property, seller, buyer, deal, outreach, distribution, offer, and transaction actions, and add missing workflow tenant-scope migration fields.
+- [x] Implement configurable comparable qualification, transparent factor scoring, median-and-MAD outlier exclusion, weighted ARV, and reason-required override audit handoff.
+- [x] Enforce the authoritative minimum-three-qualified-comparables rule before returning a weighted ARV.
+- [x] Implement deterministic, source-traceable motivation-signal detection for the explicit equity, ownership, delinquency, foreclosure, vacancy, listing, days-on-market, probate, entity, and distress rules without inventing weighted scores.
