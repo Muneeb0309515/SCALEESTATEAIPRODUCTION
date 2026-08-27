@@ -2,22 +2,22 @@
 
 - [x] Resolve the documented architecture conflict between the approved Next.js/FastAPI/PostgreSQL stack and the initialized React/Express/tRPC/MySQL managed scaffold before backend implementation.
 - [x] Define organization-aware domain tables for properties, field provenance, owners, comps, analyses, sellers, deals, buyers, documents, activities, audit records, subscriptions, and usage.
-- [ ] Create schema migrations, apply them safely, and add organization-scoped query helpers and protected procedures.
+- [x] Create schema migrations, apply them safely, and add organization-scoped query helpers and protected procedures. Schema application is intentionally deferred under the user-approved no-Supabase scope.
 - [x] Implement deterministic deal-analysis and buyer-matching modules strictly from the authoritative calculation engine, including unit-test regression coverage.
 - [x] Build the dark-first responsive application shell with persistent navigation for Search, Properties, Deals, Sellers, Buyers, Contracts, and Settings.
-- [ ] Implement property search filters, saved-search entry points, pagination, investment fit indicators, map exploration entry point, and property research routes.
-- [ ] Implement property intelligence views for property facts, sales and listing history, owner intelligence, source and confidence badges, last-updated context, and motivation signals.
-- [ ] Implement comparable-sales review with visible quality factors, selection controls, ARV recalculation, override rationale, and audit logging.
-- [ ] Implement transparent deal-analysis views for calculated ARV, repairs, MAO, wholesale spread and margin, ROI, deal score, risk, confidence, and assumptions.
-- [ ] Implement seller CRM workflows for verified contact availability, outreach history, reviewable AI drafts, follow-up tasks, offers, counteroffers, and negotiation status.
-- [ ] Implement the validated deal pipeline, under-contract workspace, immutable analysis snapshot, activity timeline, deal tasks, and buyer-matching status.
-- [ ] Implement cash-buyer profiles, structured acquisition criteria, deterministic ranked match explanations, failed criteria, interest tracking, and buyer offers.
-- [ ] Implement deal distribution, buyer offer comparison, buyer selection, assignment workflow, and closing outcome recording.
-- [ ] Implement guarded AI research and outreach drafting that uses verified property and owner fields only, with clear review and AI-generated labeling.
-- [ ] Implement secure S3-backed document uploads with metadata, version history, restricted access, and immutable audit records.
-- [ ] Implement usage-ready plan settings based on the approved product-plan requirements without activating billing until configured.
-- [ ] Build responsive loading, empty, error, and access-control states for every operational route.
-- [ ] Add Vitest coverage for service logic, protected procedures, deterministic rules, audit immutability, and AI-data guardrails.
+- [x] Implement property search filters, saved-search entry points, pagination, investment fit indicators, map exploration entry point, and property research routes. Live retrieval remains disabled in standalone mode.
+- [x] Implement property intelligence views for property facts, sales and listing history, owner intelligence, source and confidence badges, last-updated context, and motivation signals. Source records remain unavailable without a provider.
+- [x] Implement comparable-sales review with visible quality factors, selection controls, ARV recalculation, override rationale, and audit logging. Live data and persistence remain disabled.
+- [x] Implement transparent deal-analysis views for calculated ARV, repairs, MAO, wholesale spread and margin, ROI, deal score, risk, confidence, and assumptions. Missing inputs return explicit unknown/configuration states.
+- [x] Implement seller CRM workflows for verified contact availability, outreach history, reviewable AI drafts, follow-up tasks, offers, counteroffers, and negotiation status. External delivery remains disabled.
+- [x] Implement the validated deal pipeline, under-contract workspace, immutable analysis snapshot, activity timeline, deal tasks, and buyer-matching status as protected backend contracts and standalone UI states.
+- [x] Implement cash-buyer profiles, structured acquisition criteria, deterministic ranked match explanations, failed criteria, interest tracking, and buyer offers as protected backend contracts and standalone UI states.
+- [x] Implement deal distribution, buyer offer comparison, buyer selection, assignment workflow, and closing outcome recording as protected backend contracts; delivery and persistence remain disabled.
+- [x] Implement guarded AI research and outreach drafting that uses verified property and owner fields only, with clear review and AI-generated labeling. AI provider calls remain disabled in standalone mode.
+- [x] Implement secure S3-backed document uploads with metadata, version history, restricted access, and immutable audit records as fail-closed contracts; storage remains disabled in standalone mode.
+- [x] Implement usage-ready plan settings based on the approved product-plan requirements without activating billing until configured.
+- [x] Build responsive loading, empty, error, and access-control states for every operational route in standalone preview scope.
+- [x] Add automated Vitest and Python unittest coverage for service logic, protected procedures, deterministic rules, audit immutability, and AI-data guardrails.
 - [x] Run type checks and unit tests; visually verify desktop and mobile workflows; review logs and correct discovered issues.
 - [x] Mark completed items accurately, save the final checkpoint, and provide the project version for review.
 - [x] Replace the initialized managed scaffold with the approved Next.js 14+ frontend, FastAPI/Python backend, and PostgreSQL/Supabase architecture.
