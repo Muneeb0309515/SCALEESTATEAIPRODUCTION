@@ -1,0 +1,38 @@
+# Project TODO
+
+- [x] Resolve the documented architecture conflict between the approved Next.js/FastAPI/PostgreSQL stack and the initialized React/Express/tRPC/MySQL managed scaffold before backend implementation.
+- [x] Define organization-aware domain tables for properties, field provenance, owners, comps, analyses, sellers, deals, buyers, documents, activities, audit records, subscriptions, and usage.
+- [ ] Create schema migrations, apply them safely, and add organization-scoped query helpers and protected procedures.
+- [x] Implement deterministic deal-analysis and buyer-matching modules strictly from the authoritative calculation engine, including unit-test regression coverage.
+- [x] Build the dark-first responsive application shell with persistent navigation for Search, Properties, Deals, Sellers, Buyers, Contracts, and Settings.
+- [ ] Implement property search filters, saved-search entry points, pagination, investment fit indicators, map exploration entry point, and property research routes.
+- [ ] Implement property intelligence views for property facts, sales and listing history, owner intelligence, source and confidence badges, last-updated context, and motivation signals.
+- [ ] Implement comparable-sales review with visible quality factors, selection controls, ARV recalculation, override rationale, and audit logging.
+- [ ] Implement transparent deal-analysis views for calculated ARV, repairs, MAO, wholesale spread and margin, ROI, deal score, risk, confidence, and assumptions.
+- [ ] Implement seller CRM workflows for verified contact availability, outreach history, reviewable AI drafts, follow-up tasks, offers, counteroffers, and negotiation status.
+- [ ] Implement the validated deal pipeline, under-contract workspace, immutable analysis snapshot, activity timeline, deal tasks, and buyer-matching status.
+- [ ] Implement cash-buyer profiles, structured acquisition criteria, deterministic ranked match explanations, failed criteria, interest tracking, and buyer offers.
+- [ ] Implement deal distribution, buyer offer comparison, buyer selection, assignment workflow, and closing outcome recording.
+- [ ] Implement guarded AI research and outreach drafting that uses verified property and owner fields only, with clear review and AI-generated labeling.
+- [ ] Implement secure S3-backed document uploads with metadata, version history, restricted access, and immutable audit records.
+- [ ] Implement usage-ready plan settings based on the approved product-plan requirements without activating billing until configured.
+- [ ] Build responsive loading, empty, error, and access-control states for every operational route.
+- [ ] Add Vitest coverage for service logic, protected procedures, deterministic rules, audit immutability, and AI-data guardrails.
+- [x] Run type checks and unit tests; visually verify desktop and mobile workflows; review logs and correct discovered issues.
+- [ ] Mark completed items accurately, save the final checkpoint, and provide the project version for review.
+- [x] Replace the initialized managed scaffold with the approved Next.js 14+ frontend, FastAPI/Python backend, and PostgreSQL/Supabase architecture.
+- [x] Configure a production container build that serves the Next.js frontend and FastAPI API without exposing secrets or introducing unapproved runtime dependencies.
+- [x] Add Supabase-compatible PostgreSQL schema migrations, organization isolation, and immutable audit triggers in place of the scaffold’s Drizzle/MySQL data model.
+- [x] Move the supplied authoritative deterministic deal-analysis engine into the project’s controlled technical documentation and implement its rules as server-side Python modules.
+- [x] Preserve the supplied authoritative deterministic deal-analysis engine inside the project documentation.
+- [x] Replace the initialized managed scaffold with the approved Next.js 14+ frontend, FastAPI/Python backend, and PostgreSQL/Supabase architecture.
+- [x] Configure a container build that serves the Next.js frontend and FastAPI API without committing secrets.
+- [x] Implement the initial PostgreSQL/Supabase schema migration with organization structures, document-version metadata, audit-log immutability, and row-level access policies.
+- [x] Implement server-side deterministic formula contracts that return structured unknown and configuration-required states rather than fabricated values.
+- [x] Build the dark-first responsive workspace routes for Search, Properties, Deals, Sellers, Buyers, Contracts, and Settings.
+- [x] Build source-aware empty, unavailable, and configuration states rather than preloading invented property, owner, buyer, deal, or financial data.
+- [x] Implement a guarded AI-draft endpoint contract limited to verified facts and labeled for user review.
+- [x] Implement documented sequential deal-stage validation and the under-contract handoff contract for snapshot, transaction, buyer-search, matching, notification, and audit actions.
+- [x] Implement deterministic buyer-match calculation with the documented weights, retained factor scores, matched reasons, failed criteria, and configurable confidence thresholds.
+- [x] Document the source-of-truth alignment, activated safeguards, unresolved integration requirements, and buyer-weight normalization required by the current implementation.
+- [x] Add API-level regression coverage for verified-only AI inputs, AI-estimate exclusion from deterministic ARV, and fail-closed document-upload access.
