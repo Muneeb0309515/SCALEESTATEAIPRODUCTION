@@ -19,7 +19,7 @@
 - [ ] Build responsive loading, empty, error, and access-control states for every operational route.
 - [ ] Add Vitest coverage for service logic, protected procedures, deterministic rules, audit immutability, and AI-data guardrails.
 - [x] Run type checks and unit tests; visually verify desktop and mobile workflows; review logs and correct discovered issues.
-- [ ] Mark completed items accurately, save the final checkpoint, and provide the project version for review.
+- [x] Mark completed items accurately, save the final checkpoint, and provide the project version for review.
 - [x] Replace the initialized managed scaffold with the approved Next.js 14+ frontend, FastAPI/Python backend, and PostgreSQL/Supabase architecture.
 - [x] Configure a production container build that serves the Next.js frontend and FastAPI API without exposing secrets or introducing unapproved runtime dependencies.
 - [x] Add Supabase-compatible PostgreSQL schema migrations, organization isolation, and immutable audit triggers in place of the scaffold’s Drizzle/MySQL data model.
@@ -46,8 +46,12 @@
 - [x] Add regression coverage confirming property discovery and research routes remain protected until authenticated scope and verified data-provider configuration are available.
 - [x] Add protected seller-outreach, follow-up, structured buyer-criteria, buyer-distribution, buyer-offer, transaction, and closing API contracts with audit/activity handoffs and provider-safe no-send behavior.
 - [x] Add an approved provider-independent canonical-property and adapter abstraction that preserves origin and update time without fabricating undocumented RapidAPI or BatchData endpoint behavior.
+- [x] Implement authenticated organization-scoped S3 document upload, incremented metadata versioning, presigned download, access logging, and soft-delete contracts that never store document bytes in the database or project filesystem.
 - [x] Align unconfigured document-storage wording and configuration guards to the approved S3 architecture without storing document bytes in the project filesystem.
 - [x] Enforce organization ownership checks before dependent property, seller, buyer, deal, outreach, distribution, offer, and transaction actions, and add missing workflow tenant-scope migration fields.
 - [x] Implement configurable comparable qualification, transparent factor scoring, median-and-MAD outlier exclusion, weighted ARV, and reason-required override audit handoff.
 - [x] Enforce the authoritative minimum-three-qualified-comparables rule before returning a weighted ARV.
 - [x] Implement deterministic, source-traceable motivation-signal detection for the explicit equity, ownership, delinquency, foreclosure, vacancy, listing, days-on-market, probate, entity, and distress rules without inventing weighted scores.
+- [x] Deliver a standalone no-Supabase runtime with live integrations intentionally disabled and all unavailable states clearly labeled.
+- [x] Remove any user-facing wording that implies Supabase is required for the no-integration preview, while retaining the approved architecture and activation notes in documentation.
+- [x] Route standalone health checks correctly through the Next.js preview and revalidate the no-integration build.

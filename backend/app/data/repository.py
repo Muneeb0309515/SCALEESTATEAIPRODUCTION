@@ -1,4 +1,4 @@
-"""Organization-scoped Supabase data access. Every query carries the organization id."""
+"""Organization-scoped production data access. Every query carries the organization id."""
 from typing import Any
 from supabase import create_client
 from ..core.config import get_settings

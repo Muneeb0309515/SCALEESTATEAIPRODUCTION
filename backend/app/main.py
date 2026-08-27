@@ -1,6 +1,8 @@
 from typing import Literal
+from datetime import datetime, timezone
 import httpx
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from .core.config import get_settings
 from .deal_engine import AnalysisInput, calculate_analysis
@@ -15,6 +17,7 @@ from .data.workflow_models import BuyerCriteriaUpdate, BuyerOfferCreate, Closing
 from .scoring import ClassificationConfiguration, WeightedScoreConfiguration, WeightedScoreInput, calculate_final_classification, calculate_weighted_score
 from .motivation import MotivationInput, detect_motivation_signals
 from .providers import get_property_provider
+from .services.document_storage import get_document_url, put_document
 
 app = FastAPI(title="SCALEESTATE AI API", version="1.0.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
@@ -32,7 +35,7 @@ class DraftRequest(BaseModel):
 @app.get("/health")
 async def health_check():
     settings = get_settings()
-    return {"status": "ready", "services": {"supabase_project": "configured" if settings.has_project_supabase_connection else "configuration_required", "ai_drafts": "configured" if settings.has_llm_connection else "configuration_required"}}
+    return {"status": "ready", "mode": "standalone_preview", "services": {"supabase_project": "disabled_by_request", "property_data": "disabled_by_request", "document_storage": "disabled_by_request", "ai_drafts": "disabled_by_request"}}
 
 @app.get("/api/v1/auth/session")
 async def auth_session(identity: AuthenticatedIdentity = Depends(require_authenticated_identity)):
@@ -142,6 +145,44 @@ async def create_task(payload: TaskCreate, scope: OrganizationScope = Depends(re
 @app.get("/api/v1/documents")
 async def list_documents(scope: OrganizationScope = Depends(require_organization_scope)):
     return OrganizationRepository(scope.organization_id).list("documents")
+
+@app.post("/api/v1/documents")
+async def upload_document(
+    document_type: str = Form(...),
+    title: str = Form(...),
+    deal_id: str | None = Form(default=None),
+    file: UploadFile = File(...),
+    scope: OrganizationScope = Depends(require_organization_scope),
+):
+    repository = OrganizationRepository(scope.organization_id)
+    if deal_id:
+        repository.require_record("deals", deal_id, "deal")
+    existing = repository.client.table("documents").select("version").eq("organization_id", scope.organization_id).eq("title", title).eq("document_type", document_type).order("version", desc=True).limit(1).execute().data
+    version = (existing[0]["version"] if existing else 0) + 1
+    storage_key, _ = await put_document(scope.organization_id, file)
+    record = repository.create("documents", {"deal_id": deal_id, "document_type": document_type, "title": title, "storage_key": storage_key, "version": version, "uploaded_by": scope.user_id, "metadata": {"filename": file.filename, "content_type": file.content_type}})
+    repository.append_audit("document", record["id"], "version_created", scope.user_id, new_value=record)
+    repository.client.table("document_access_log").insert({"organization_id": scope.organization_id, "document_id": record["id"], "user_id": scope.user_id, "action": "uploaded"}).execute()
+    return record
+
+@app.get("/api/v1/documents/{document_id}/download")
+async def download_document(document_id: str, scope: OrganizationScope = Depends(require_organization_scope)):
+    repository = OrganizationRepository(scope.organization_id)
+    document = repository.require_record("documents", document_id, "document")
+    if document.get("deleted_at"):
+        raise HTTPException(status_code=410, detail={"code": "DOCUMENT_SOFT_DELETED", "message": "The requested document version is no longer available."})
+    url = await get_document_url(document["storage_key"])
+    repository.client.table("document_access_log").insert({"organization_id": scope.organization_id, "document_id": document_id, "user_id": scope.user_id, "action": "downloaded"}).execute()
+    return RedirectResponse(url=url, status_code=307)
+
+@app.delete("/api/v1/documents/{document_id}")
+async def soft_delete_document(document_id: str, scope: OrganizationScope = Depends(require_organization_scope)):
+    repository = OrganizationRepository(scope.organization_id)
+    document = repository.require_record("documents", document_id, "document")
+    response = repository.client.table("documents").update({"deleted_at": datetime.now(timezone.utc).isoformat()}).eq("id", document_id).execute()
+    repository.append_audit("document", document_id, "soft_delete", scope.user_id, old_value=document, new_value={"deleted_at": True})
+    repository.client.table("document_access_log").insert({"organization_id": scope.organization_id, "document_id": document_id, "user_id": scope.user_id, "action": "access_denied"}).execute()
+    return response.data[0]
 
 @app.post("/api/v1/sellers/{seller_id}/outreach")
 async def log_outreach(seller_id: str, payload: OutreachCreate, scope: OrganizationScope = Depends(require_organization_scope)):
@@ -280,4 +321,4 @@ async def create_reviewable_draft(payload: DraftRequest, identity: Authenticated
 async def document_upload_intent(identity: AuthenticatedIdentity = Depends(require_authenticated_identity)):
     if not get_settings().has_project_supabase_connection:
         raise HTTPException(status_code=503, detail={"code": "CONFIGURATION_REQUIRED", "message": "Secure document storage requires authenticated organization access and a restricted S3 document bucket."})
-    raise HTTPException(status_code=501, detail={"code": "AUTHORIZATION_REQUIRED", "message": "Signed organization-authorized upload flow awaits validated Supabase Auth."})
+    raise HTTPException(status_code=501, detail={"code": "AUTHORIZATION_REQUIRED", "message": "Signed organization-authorized upload flow is disabled in the standalone preview."})

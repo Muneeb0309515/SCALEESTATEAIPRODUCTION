@@ -1,4 +1,4 @@
-"""Supabase Auth and organization-membership boundary for operational routes."""
+"""Production authentication and organization-membership boundary for operational routes."""
 from dataclasses import dataclass
 from fastapi import Header, HTTPException
 from supabase import create_client
@@ -14,7 +14,7 @@ class AuthenticatedIdentity:
 def require_authenticated_identity(authorization: str | None = Header(default=None)) -> AuthenticatedIdentity:
     settings = get_settings()
     if not settings.has_project_supabase_connection:
-        raise HTTPException(status_code=503, detail={"code": "CONFIGURATION_REQUIRED", "message": "Authentication requires a validated direct Supabase project connection."})
+        raise HTTPException(status_code=503, detail={"code": "CONFIGURATION_REQUIRED", "message": "Authentication is disabled in the standalone preview; production access requires the approved authentication configuration."})
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail={"code": "AUTHENTICATION_REQUIRED", "message": "A valid bearer access token is required."})
     try:
