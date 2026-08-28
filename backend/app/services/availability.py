@@ -17,9 +17,11 @@ def require_project_database() -> None:
 
 def require_property_provider() -> str:
     provider = os.getenv("PROPERTY_DATA_PROVIDER")
-    if provider not in {"rapidapi", "batchdata"} or not os.getenv("PROPERTY_DATA_API_KEY"):
-        raise IntegrationUnavailable("CONFIGURATION_REQUIRED", "Property search requires an approved configured provider; no records are fabricated.")
-    return provider
+    if provider == "realtyapi" and os.getenv("REALTYAPI_API_KEY") and os.getenv("REALTYAPI_BASE_URL"):
+        return provider
+    if provider in {"rapidapi", "batchdata"} and os.getenv("PROPERTY_DATA_API_KEY"):
+        return provider
+    raise IntegrationUnavailable("CONFIGURATION_REQUIRED", "Property search requires an approved configured provider; no records are fabricated.")
 
 
 def require_document_storage() -> None:

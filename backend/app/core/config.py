@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     """Runtime configuration comes from environment variables only."""
     supabase_url: str | None = None
     supabase_key: str | None = None
+    realtyapi_api_key: str | None = None
+    realtyapi_base_url: str | None = None
     built_in_forge_api_url: str | None = None
     built_in_forge_api_key: str | None = None
     document_bucket: str | None = None

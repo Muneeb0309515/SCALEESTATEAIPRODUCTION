@@ -1,5 +1,5 @@
-from typing import Literal
 from datetime import datetime, timezone
+from typing import Literal
 import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse
@@ -17,6 +17,7 @@ from .data.workflow_models import BuyerCriteriaUpdate, BuyerOfferCreate, Closing
 from .scoring import ClassificationConfiguration, WeightedScoreConfiguration, WeightedScoreInput, calculate_final_classification, calculate_weighted_score
 from .motivation import MotivationInput, detect_motivation_signals
 from .providers import get_property_provider
+from .providers.realtyapi import RealtyApiAdapter, RealtySearchCriteria
 from .services.document_storage import get_document_url, put_document
 
 app = FastAPI(title="SCALEESTATE AI API", version="1.0.0", docs_url="/api/docs", openapi_url="/api/openapi.json")
@@ -44,11 +45,6 @@ async def auth_session(identity: AuthenticatedIdentity = Depends(require_authent
 @app.get("/api/v1/properties")
 async def list_properties(scope: OrganizationScope = Depends(require_organization_scope)):
     return OrganizationRepository(scope.organization_id).list("properties", "updated_at")
-
-@app.get("/api/v1/search-us-market")
-async def search_us_market(identity: AuthenticatedIdentity = Depends(require_authenticated_identity)):
-    """Approved discovery route: fails closed until an authorized provider adapter is active."""
-    return await property_search_preview(identity)
 
 @app.get("/api/v1/saved-searches")
 async def list_saved_searches(scope: OrganizationScope = Depends(require_organization_scope)):
@@ -280,13 +276,35 @@ async def preview_buyer_match(deal: DealCandidate, buyer: BuyerCriteria, configu
     return match_buyer(deal, buyer, configuration)
 
 @app.get("/api/v1/providers/property-search")
-async def property_search_preview(identity: AuthenticatedIdentity = Depends(require_authenticated_identity)):
-    """Integration gate; a provider adapter is never substituted with mock records."""
+@app.get("/api/v1/search-us-market")
+async def property_search_preview(
+    location: str,
+    page: int = 1,
+    limit: int = 50,
+    min_price: int | None = None,
+    max_price: int | None = None,
+    min_beds: int | None = None,
+    max_beds: int | None = None,
+    min_baths: float | None = None,
+    property_type: str | None = None,
+    status: str | None = None,
+    identity: AuthenticatedIdentity = Depends(require_authenticated_identity),
+):
+    """Return source-backed RealtyAPI.io listings with canonical provenance fields."""
     try:
-        require_property_provider()
+        provider_name = require_property_provider()
+        provider = get_property_provider()
+        if provider_name != "realtyapi" or not isinstance(provider, RealtyApiAdapter):
+            raise HTTPException(status_code=501, detail={"code": "ADAPTER_ENDPOINT_REQUIRED", "message": "The configured provider adapter is not available."})
+        criteria = RealtySearchCriteria(location=location, page=page, limit=limit, min_price=min_price, max_price=max_price, min_beds=min_beds, max_beds=max_beds, min_baths=min_baths, property_type=property_type, status=status)
+        return await provider.search(criteria)
     except IntegrationUnavailable as error:
         raise HTTPException(status_code=503, detail={"code": error.code, "message": error.message}) from error
-    return get_property_provider()
+    except httpx.HTTPStatusError as error:
+        status_code = error.response.status_code
+        raise HTTPException(status_code=502, detail={"code": "PROPERTY_PROVIDER_ERROR", "message": "RealtyAPI.io did not return a successful property-search response."}) from error
+    except (httpx.HTTPError, ValueError) as error:
+        raise HTTPException(status_code=502, detail={"code": "PROPERTY_PROVIDER_ERROR", "message": "The RealtyAPI.io property response could not be normalized."}) from error
 
 @app.post("/api/v1/comparables/analyze")
 async def analyze_comparable_sales(candidates: list[ComparableCandidate], configuration: ComparableConfiguration, identity: AuthenticatedIdentity = Depends(require_authenticated_identity)):
