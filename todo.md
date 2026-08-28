@@ -55,3 +55,10 @@
 - [x] Deliver a standalone no-Supabase runtime with live integrations intentionally disabled and all unavailable states clearly labeled.
 - [x] Remove any user-facing wording that implies Supabase is required for the no-integration preview, while retaining the approved architecture and activation notes in documentation.
 - [x] Route standalone health checks correctly through the Next.js preview and revalidate the no-integration build.
+- [ ] Integrate an approved live property-data provider for source-backed property search, pagination, normalization, and provenance.
+- [ ] Integrate the approved AI service for verified-facts-only seller outreach and research-summary drafts with required user review labels.
+- [ ] Configure and validate required external-service credentials without exposing secrets or activating unapproved providers.
+- [ ] Add regression tests and update standalone status copy after live property and AI integrations are validated.
+- [ ] Verify Realtor.io’s official API, data coverage, authentication method, endpoint contract, and usage terms before implementation.
+- [ ] Configure the exact Realtor.io credential and endpoint variables securely after the user supplies or confirms them.
+- [ ] Implement and validate the Realtor.io adapter only after its official API contract is verified.
