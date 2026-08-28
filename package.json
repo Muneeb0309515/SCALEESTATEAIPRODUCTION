@@ -9,7 +9,8 @@
     "start": "node infra/prod.mjs",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e:search": "node scripts/search-browser-check.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.7.0",
@@ -23,6 +24,7 @@
     "@types/node": "^24.7.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
+    "playwright": "^1.62.1",
     "prettier": "^3.6.2",
     "typescript": "^5.9.3",
     "vitest": "^2.1.4"

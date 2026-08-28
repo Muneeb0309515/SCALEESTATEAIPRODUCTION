@@ -66,3 +66,13 @@
 - [x] Add automated RealtyAPI normalization and pagination regression coverage.
 - [x] Wire the Sellers CRM AI-draft action to the guarded endpoint with loading, error, and labeled review states.
 - [x] Add automated regression coverage for the live AI-draft path using verified-facts-only context and supported model selection.
+- [x] Fix the proxied preview dev-resource origin configuration so search-page JavaScript interactions load reliably.
+- [x] Replace non-functional property-search category placeholders with selectable filters and pass supported filter values to RealtyAPI.io.
+- [x] Verify the submitted search request, loading/error states, and live provider response path in the browser and automated checks.
+- [x] Add a browser-driven search-form verification that asserts the visible authentication-required error state after submission in the standalone preview.
+- [x] Add an authenticated integration-test path or documented activation check proving a real RealtyAPI response can reach the UI once valid organization scope is enabled.
+- [x] Expose a clear in-UI authentication-required action when live search is blocked by the standalone configuration boundary.
+- [x] Add a real Playwright browser test that submits the search form and asserts the rendered authentication-required error and access-state action.
+- [x] Document the authenticated activation path and verification steps required for RealtyAPI results to reach the UI.
+- [x] Add an authenticated protected-route integration test path using controlled provider/auth fixtures without fabricating production property data.
+- [x] Add a browser UI provider-fixture check that asserts a controlled RealtyAPI-shaped result card renders source and last-updated provenance.
