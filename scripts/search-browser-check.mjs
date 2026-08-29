@@ -16,14 +16,17 @@ try {
   const searchAlert = page.locator(".form-error[role=alert]");
   await searchAlert.waitFor({ state: "visible" });
   const alertText = await searchAlert.innerText();
-  assert.match(alertText, /Authentication is disabled in the standalone preview/i);
+  assert.match(alertText, /Sign in to an approved workspace before searching live property records/i);
   await page.getByRole("link", { name: "Review access state" }).waitFor({ state: "visible" });
-  assert.ok(searchRequest, "The browser should submit a provider-search request.");
-  const submittedUrl = new URL(searchRequest.url());
-  assert.equal(submittedUrl.searchParams.get("location"), "Austin, TX");
-  assert.equal(submittedUrl.searchParams.get("property_type"), "single_family");
+  assert.equal(searchRequest, undefined, "The browser must not send a provider request without an authenticated session.");
 
   const providerPage = await browser.newPage();
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  assert.ok(supabaseUrl, "The browser fixture requires the public Supabase URL.");
+  const storageKey = `sb-${new URL(supabaseUrl).hostname.split(".")[0]}-auth-token`;
+  await providerPage.addInitScript(({ key }) => {
+    window.localStorage.setItem(key, JSON.stringify({ access_token: "fixture-access-token", refresh_token: "fixture-refresh-token", expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, token_type: "bearer", user: { id: "fixture-user", aud: "authenticated", role: "authenticated", email: "fixture@example.com", app_metadata: { organization_id: "org-fixture" } } }));
+  }, { key: storageKey });
   await providerPage.route("**/api/v1/providers/property-search**", async (route) => {
     await route.fulfill({
       status: 200,

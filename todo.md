@@ -76,3 +76,17 @@
 - [x] Document the authenticated activation path and verification steps required for RealtyAPI results to reach the UI.
 - [x] Add an authenticated protected-route integration test path using controlled provider/auth fixtures without fabricating production property data.
 - [x] Add a browser UI provider-fixture check that asserts a controlled RealtyAPI-shaped result card renders source and last-updated provenance.
+- [x] Resolve the authentication-disabled preview blocker preventing live RealtyAPI property results from returning. The project now requires a real signed-in Supabase session instead of remaining disabled.
+- [ ] Verify the approved authentication and organization-scope configuration required by the project before enabling live search.
+- [x] Ensure the frontend session handoff sends the approved authenticated context to the protected property-search route, or keep the fallback state explicit if configuration is unavailable.
+- [ ] Validate the end-to-end authenticated property search without fabricating or exposing unscoped property data.
+- [x] Activate validated Supabase authentication configuration for the approved live-search scope.
+- [x] Implement the frontend authenticated session and organization header handoff for protected RealtyAPI search. Bearer session handoff is active; organization membership verification remains a protected backend concern.
+- [ ] Validate authenticated live property search, organization membership enforcement, and fallback behavior.
+- [x] Update standalone guard tests to explicitly override Supabase validation state now that authenticated mode is activated.
+- [x] Add authenticated-mode route assertions proving missing tokens return 401 while configured search remains protected.
+- [x] Derive the approved organization identifier from the authenticated Supabase session and send it as the organization header on live property-search requests.
+- [x] Enforce organization membership on the protected property-search route and return a clear access error when the user has no approved organization.
+- [x] Add regression coverage for allowed and denied organization-scoped property search.
+- [x] Add a property-search regression test proving a missing organization header returns 400 ORGANIZATION_REQUIRED.
+- [x] Add a property-search regression test proving a non-member organization returns 403 ORGANIZATION_ACCESS_DENIED.

@@ -288,9 +288,9 @@ async def property_search_preview(
     min_baths: float | None = None,
     property_type: str | None = None,
     status: str | None = None,
-    identity: AuthenticatedIdentity = Depends(require_authenticated_identity),
+    scope: OrganizationScope = Depends(require_organization_scope),
 ):
-    """Return source-backed RealtyAPI.io listings with canonical provenance fields."""
+    """Return source-backed RealtyAPI.io listings with canonical provenance fields for an approved organization."""
     try:
         provider_name = require_property_provider()
         provider = get_property_provider()
