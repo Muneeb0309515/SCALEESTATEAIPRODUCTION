@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getPersistedSupabaseSession, getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { ArrowRight, ChevronLeft, ChevronRight, Filter, MapPinned, Search, ShieldCheck } from "lucide-react";
 
 function getOrganizationId(session: { user?: { app_metadata?: Record<string, unknown> } } | null) {
@@ -48,8 +48,12 @@ export function LivePropertySearch() {
       setAuthReady(true);
       return;
     }
-    void client.auth.getSession().then(({ data }) => {
-      setSignedInEmail(data.session?.user.email ?? null);
+    const persistedSession = getPersistedSupabaseSession();
+    setSignedInEmail(persistedSession?.user.email ?? null);
+    const sessionCheck = client.auth.getSession().then(({ data }) => data.session).catch(() => null);
+    void Promise.race([sessionCheck, new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 1500))]).then((session) => {
+      const resolvedSession = session ?? persistedSession;
+      setSignedInEmail(resolvedSession?.user.email ?? null);
       setAuthReady(true);
     });
     const { data: listener } = client.auth.onAuthStateChange((_event, session) => {
@@ -71,13 +75,17 @@ export function LivePropertySearch() {
     setAccessIssue(null);
     try {
       const client = getSupabaseBrowserClient();
-      const { data: sessionData } = client ? await client.auth.getSession() : { data: { session: null } };
-      const accessToken = sessionData.session?.access_token;
+      const persistedSession = getPersistedSupabaseSession();
+      const session = client
+        ? await Promise.race([client.auth.getSession().then(({ data }) => data.session).catch(() => null), new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 1500))])
+        : null;
+      const resolvedSession = session ?? persistedSession;
+      const accessToken = resolvedSession?.access_token;
       if (!accessToken) {
         setAccessIssue("auth");
         throw new Error("Sign in to an approved workspace before searching live property records.");
       }
-      const organizationId = getOrganizationId(sessionData.session);
+      const organizationId = getOrganizationId(resolvedSession);
       if (!organizationId) {
         setAccessIssue("organization");
         throw new Error("Your signed-in account is not assigned to an approved organization.");
@@ -87,7 +95,17 @@ export function LivePropertySearch() {
       if (status) params.set("status", status);
       if (maxPrice) params.set("max_price", maxPrice);
       if (minBeds) params.set("min_beds", minBeds);
-      const response = await fetch(`/api/v1/providers/property-search?${params.toString()}`, { headers: { Authorization: `Bearer ${accessToken}`, "X-Organization-Id": organizationId } });
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 25000);
+      let response: Response;
+      try {
+        response = await fetch(`/api/v1/providers/property-search?${params.toString()}`, { headers: { Authorization: `Bearer ${accessToken}`, "X-Organization-Id": organizationId }, signal: controller.signal });
+      } catch (caught) {
+        if (caught instanceof DOMException && caught.name === "AbortError") throw new Error("The property provider took too long to respond. Try a narrower location or search again.");
+        throw new Error("The live property provider connection was interrupted. Search again in a moment.");
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
         const code = body?.detail?.code;

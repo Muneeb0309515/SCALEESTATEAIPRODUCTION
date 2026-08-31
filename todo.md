@@ -77,12 +77,12 @@
 - [x] Add an authenticated protected-route integration test path using controlled provider/auth fixtures without fabricating production property data.
 - [x] Add a browser UI provider-fixture check that asserts a controlled RealtyAPI-shaped result card renders source and last-updated provenance.
 - [x] Resolve the authentication-disabled preview blocker preventing live RealtyAPI property results from returning. The project now requires a real signed-in Supabase session instead of remaining disabled.
-- [ ] Verify the approved authentication and organization-scope configuration required by the project before enabling live search.
+- [x] Verify the approved authentication and organization-scope configuration required by the project before enabling live search.
 - [x] Ensure the frontend session handoff sends the approved authenticated context to the protected property-search route, or keep the fallback state explicit if configuration is unavailable.
-- [ ] Validate the end-to-end authenticated property search without fabricating or exposing unscoped property data.
+- [x] Validate the end-to-end authenticated property search without fabricating or exposing unscoped property data.
 - [x] Activate validated Supabase authentication configuration for the approved live-search scope.
 - [x] Implement the frontend authenticated session and organization header handoff for protected RealtyAPI search. Bearer session handoff is active; organization membership verification remains a protected backend concern.
-- [ ] Validate authenticated live property search, organization membership enforcement, and fallback behavior.
+- [x] Validate authenticated live property search, organization membership enforcement, and fallback behavior.
 - [x] Update standalone guard tests to explicitly override Supabase validation state now that authenticated mode is activated.
 - [x] Add authenticated-mode route assertions proving missing tokens return 401 while configured search remains protected.
 - [x] Derive the approved organization identifier from the authenticated Supabase session and send it as the organization header on live property-search requests.
@@ -90,3 +90,20 @@
 - [x] Add regression coverage for allowed and denied organization-scoped property search.
 - [x] Add a property-search regression test proving a missing organization header returns 400 ORGANIZATION_REQUIRED.
 - [x] Add a property-search regression test proving a non-member organization returns 403 ORGANIZATION_ACCESS_DENIED.
+- [x] Guide the user through applying the prepared PostgreSQL/Supabase migrations in the approved project in dependency order.
+- [x] Verify the migrated organization and membership schema without destructive database changes.
+- [x] Verify user organization assignment and complete authenticated live-search testing after migration.
+- [x] Fix backend verification of Supabase ES256 access tokens so valid signed-in sessions are accepted by protected search routes.
+- [x] Preserve issuer, expiry, audience, and organization-claim validation when switching from the failing remote user lookup.
+- [x] Add regression coverage for valid and invalid Supabase token verification and rerun live search.
+- [x] Add a safe Supabase JWKS configuration fallback for server environments that cannot reach the public JWKS endpoint directly.
+- [x] Validate the fallback only against the approved Supabase issuer and ES256 audience, never by trusting browser-supplied identity claims.
+- [x] Re-test the authenticated Dallas search after the approved public signing key is configured.
+- [x] Prevent Supabase browser `getSession()` locking from leaving the live search button stuck in a loading state.
+- [x] Use a same-origin persisted session fallback only as a bearer-token source, while keeping backend JWT and organization membership verification authoritative.
+- [x] Add a regression check proving the search form resolves loading and renders live results after the session handoff.
+- [x] Add backend auth regression tests that verify valid Supabase ES256 JWT acceptance and invalid issuer, audience, expiry, and signature rejection.
+- [x] Replace or supplement session retrieval with a proven non-blocking persisted-session fallback and test loading exit on session success or failure.
+- [x] Extend browser regression to assert authenticated live search exits Searching and renders result cards, or surfaces the bounded provider timeout/error state.
+- [x] Extend the browser regression to assert the unauthenticated/session-failure path exits Searching and restores the Search properties button text.
+- [x] Re-mark the non-blocking session fallback item complete only after both success and failure loading-exit assertions are covered.

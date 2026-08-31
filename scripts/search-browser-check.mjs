@@ -18,6 +18,7 @@ try {
   const alertText = await searchAlert.innerText();
   assert.match(alertText, /Sign in to an approved workspace before searching live property records/i);
   await page.getByRole("link", { name: "Review access state" }).waitFor({ state: "visible" });
+  await page.getByRole("button", { name: "Search properties" }).waitFor({ state: "visible" });
   assert.equal(searchRequest, undefined, "The browser must not send a provider request without an authenticated session.");
 
   const providerPage = await browser.newPage();
@@ -45,6 +46,7 @@ try {
   await providerPage.fill('input[aria-label="Location"]', "Austin, TX");
   await providerPage.getByRole("button", { name: "Search properties" }).click();
   await providerPage.getByRole("link", { name: /123 Main St/ }).waitFor({ state: "visible" });
+  await providerPage.getByRole("button", { name: "Search properties" }).waitFor({ state: "visible" });
   assert.match(await providerPage.locator(".result-provenance").innerText(), /Source: realtyapi · Updated/);
   await providerPage.close();
   console.log("Browser search check passed: category filter submitted, auth-required state rendered, and provider provenance card rendered.");

@@ -1,5 +1,6 @@
 from functools import lru_cache
 import os
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,11 +16,18 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=None, extra="ignore")
 
     @property
+    def supabase_project_url(self) -> str | None:
+        if not self.supabase_url:
+            return None
+        return self.supabase_url.split("/rest/v1", 1)[0].rstrip("/")
+
+    @property
     def has_project_supabase_connection(self) -> bool:
+        project_url = self.supabase_project_url
         return bool(
-            self.supabase_url
-            and self.supabase_url.startswith("https://")
-            and ".supabase.co" in self.supabase_url
+            project_url
+            and project_url.startswith("https://")
+            and ".supabase.co" in project_url
             and self.supabase_key
             and os.getenv("SUPABASE_PROJECT_VALIDATED") == "true"
         )

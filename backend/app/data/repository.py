@@ -10,7 +10,7 @@ class OrganizationRepository:
         require_project_database()
         settings = get_settings()
         self.organization_id = organization_id
-        self.client = create_client(settings.supabase_url, settings.supabase_key)
+        self.client = create_client(settings.supabase_project_url, settings.supabase_key)
 
     def list(self, table: str, order_column: str = "created_at") -> list[dict[str, Any]]:
         return self.client.table(table).select("*").eq("organization_id", self.organization_id).order(order_column, desc=True).execute().data
