@@ -70,6 +70,37 @@ class AuthenticatedPropertySearchTests(unittest.TestCase):
         self.assertEqual(adapter.search.await_args.args[0].property_type, "single_family")
         self.assertEqual(adapter.search.await_args.args[0].limit, 1)
 
+    def test_authenticated_provider_detail_reaches_property_detail_route(self):
+        identity = AuthenticatedIdentity(user_id="user-1", email="owner@example.com")
+        property_record = CanonicalProperty(
+            provider_property_id="property-1",
+            address="123 Main St, Austin, TX 78744",
+            city="Austin",
+            state="TX",
+            zip_code="78744",
+            property_type="single_family",
+            list_price=275000,
+            beds=3,
+            baths=2,
+            living_area=1500,
+            source="realtyapi",
+            data_updated_at=datetime.now(timezone.utc),
+        )
+        adapter = RealtyApiAdapter()
+        adapter.details_by_address = AsyncMock(return_value=property_record)
+        scope = OrganizationScope(organization_id="org-1", user_id=identity.user_id)
+        main.app.dependency_overrides[main.require_organization_scope] = lambda: scope
+        try:
+            with patch.object(main, "require_property_provider", return_value="realtyapi"), patch.object(main, "get_property_provider", return_value=adapter):
+                response = TestClient(main.app).get("/api/v1/providers/property-detail", params={"address": property_record.address}, headers={"X-Organization-Id": "org-1"})
+        finally:
+            main.app.dependency_overrides.pop(main.require_organization_scope, None)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["provider_property_id"], "property-1")
+        self.assertEqual(response.json()["source"], "realtyapi")
+        adapter.details_by_address.assert_awaited_once_with(property_record.address)
+
 
 if __name__ == "__main__":
     unittest.main()

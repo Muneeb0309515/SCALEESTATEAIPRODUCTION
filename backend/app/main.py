@@ -306,6 +306,25 @@ async def property_search_preview(
     except (httpx.HTTPError, ValueError) as error:
         raise HTTPException(status_code=502, detail={"code": "PROPERTY_PROVIDER_ERROR", "message": "The RealtyAPI.io property response could not be normalized."}) from error
 
+@app.get("/api/v1/providers/property-detail")
+async def property_detail(
+    address: str,
+    scope: OrganizationScope = Depends(require_organization_scope),
+):
+    """Resolve one source-backed property detail from the approved provider."""
+    try:
+        provider_name = require_property_provider()
+        provider = get_property_provider()
+        if provider_name != "realtyapi" or not isinstance(provider, RealtyApiAdapter):
+            raise HTTPException(status_code=501, detail={"code": "ADAPTER_ENDPOINT_REQUIRED", "message": "The configured provider adapter is not available."})
+        return await provider.details_by_address(address)
+    except IntegrationUnavailable as error:
+        raise HTTPException(status_code=503, detail={"code": error.code, "message": error.message}) from error
+    except httpx.HTTPStatusError as error:
+        raise HTTPException(status_code=502, detail={"code": "PROPERTY_PROVIDER_ERROR", "message": "RealtyAPI.io did not return a successful property-detail response."}) from error
+    except (httpx.HTTPError, ValueError) as error:
+        raise HTTPException(status_code=502, detail={"code": "PROPERTY_PROVIDER_ERROR", "message": "The RealtyAPI.io property detail could not be normalized."}) from error
+
 @app.post("/api/v1/comparables/analyze")
 async def analyze_comparable_sales(candidates: list[ComparableCandidate], configuration: ComparableConfiguration, identity: AuthenticatedIdentity = Depends(require_authenticated_identity)):
     """Return an explainable deterministic comp review; database persistence is separate."""

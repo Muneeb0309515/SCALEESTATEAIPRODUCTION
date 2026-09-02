@@ -107,3 +107,8 @@
 - [x] Extend browser regression to assert authenticated live search exits Searching and renders result cards, or surfaces the bounded provider timeout/error state.
 - [x] Extend the browser regression to assert the unauthenticated/session-failure path exits Searching and restores the Search properties button text.
 - [x] Re-mark the non-blocking session fallback item complete only after both success and failure loading-exit assertions are covered.
+- [x] Resolve live RealtyAPI property IDs in the property-intelligence detail route instead of treating them as unresolved local records.
+- [x] Preserve provider provenance, confidence, source timestamps, and truthful UNKNOWN states for fields RealtyAPI does not provide.
+- [x] Add regression coverage for live property-detail hydration, missing provider records, and organization access boundaries.
+- [x] Extend the browser regression to open a live search result and assert the property-intelligence view renders the provider-backed address and freshness metadata.
+- [x] Update the global workspace status to distinguish signed-in provider-ready state from unauthenticated access-required state.

@@ -1,6 +1,7 @@
-import { PropertyIntelligence } from "@/components/WorkspaceScreens";
+import { PropertyIntelligenceLive } from "@/components/PropertyIntelligenceLive";
 
-export default async function PropertyPage({ params }: { params: Promise<{ propertyId: string }> }) {
+export default async function PropertyPage({ params, searchParams }: { params: Promise<{ propertyId: string }>; searchParams: Promise<{ address?: string }> }) {
   const { propertyId } = await params;
-  return <PropertyIntelligence propertyId={propertyId} />;
+  const { address } = await searchParams;
+  return <PropertyIntelligenceLive propertyId={propertyId} address={address} />;
 }
