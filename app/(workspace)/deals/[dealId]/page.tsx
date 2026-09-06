@@ -1,6 +1,6 @@
-import { DealWorkspace } from "@/components/WorkspaceScreens";
+import { DealWorkspaceLive } from "@/components/DealWorkspaceLive";
 
 export default async function DealPage({ params }: { params: Promise<{ dealId: string }> }) {
   const { dealId } = await params;
-  return <DealWorkspace dealId={dealId} />;
+  return <DealWorkspaceLive dealId={dealId} />;
 }
