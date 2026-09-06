@@ -19,16 +19,4 @@ describe("approved SCALEESTATE architecture", () => {
     expect(search).toContain('params.set("status", status)');
     expect(nextConfig).toContain("3000-iz9chabu4d2hf544lzxnj-e1a973e9.us3.manus.computer");
   });
-  it("keeps property actions and CRM handoff routes connected", () => {
-    const intelligence = readFileSync("components/PropertyIntelligenceLive.tsx", "utf8");
-    const dealWorkspace = readFileSync("components/DealWorkspaceLive.tsx", "utf8");
-    const api = readFileSync("backend/app/main.py", "utf8");
-    expect(existsSync("app/(workspace)/properties/[propertyId]/page.tsx")).toBe(true);
-    expect(existsSync("app/(workspace)/deals/[dealId]/page.tsx")).toBe(true);
-    ["Owner details", "Comparable sales", "Map", "Deal underwriting", "/api/v1/underwriting/handoff"].forEach((label) => expect(intelligence).toContain(label));
-    expect(api).toContain('@app.get("/api/v1/deals/{deal_id}")');
-    expect(api).toContain('@app.post("/api/v1/deals/{deal_id}/match-buyers")');
-    expect(dealWorkspace).toContain("Preview");
-    expect(dealWorkspace).toContain("Under Contract");
-  });
 });

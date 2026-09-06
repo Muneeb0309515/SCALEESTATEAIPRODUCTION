@@ -6,7 +6,6 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from .core.config import get_settings
 from .deal_engine import AnalysisInput, calculate_analysis
-from .deal_engine.schemas import AnalysisAssumptions, DataClassification, ProvenancedNumber
 from .workflows import TransitionInput, validate_transition
 from .matching import BuyerCriteria, DealCandidate, MatchConfiguration, match_buyer
 from .services import IntegrationUnavailable, require_property_provider
@@ -33,26 +32,6 @@ class DraftRequest(BaseModel):
     draft_type: Literal["seller_outreach", "research_summary"]
     verified_facts: list[VerifiedFact] = Field(min_length=1, max_length=60)
     user_instruction: str = Field(default="", max_length=1500)
-
-class UnderwritingHandoffRequest(BaseModel):
-    address: str = Field(min_length=1, max_length=300)
-    property_id: str = Field(min_length=1, max_length=200)
-    purchase_contract_price: float = Field(ge=0)
-    repair_cost: float | None = Field(default=None, ge=0)
-    arv: float | None = Field(default=None, ge=0)
-    arv_classification: Literal["USER_INPUT", "CALCULATED_DATA"] = "USER_INPUT"
-    mao_percentage: float | None = Field(default=None, ge=0, le=2)
-    desired_profit: float | None = Field(default=None, ge=0)
-    expected_assignment_price: float | None = Field(default=None, ge=0)
-    expected_sale_price: float | None = Field(default=None, ge=0)
-    transaction_costs: float | None = Field(default=None, ge=0)
-    holding_costs: float | None = Field(default=None, ge=0)
-    financing_costs: float | None = Field(default=None, ge=0)
-    other_costs: float | None = Field(default=None, ge=0)
-    net_profit: float | None = Field(default=None)
-    total_invested_capital: float | None = Field(default=None, ge=0)
-    requires_financing: bool = False
-    buyer_match_market: str | None = None
 
 @app.get("/health")
 async def health_check():
@@ -233,46 +212,6 @@ async def update_buyer_criteria(buyer_id: str, payload: BuyerCriteriaUpdate, sco
     repository.append_audit("buyer_criteria", buyer_id, "upsert", scope.user_id, new_value=payload.model_dump())
     return response.data[0]
 
-@app.get("/api/v1/deals/{deal_id}")
-async def get_deal_workspace(deal_id: str, scope: OrganizationScope = Depends(require_organization_scope)):
-    repository = OrganizationRepository(scope.organization_id)
-    deal = repository.require_record("deals", deal_id, "deal")
-    analyses = repository.client.table("deal_analyses").select("*").eq("organization_id", scope.organization_id).eq("property_id", deal.get("property_id")).order("calculated_at", desc=True).limit(1).execute().data
-    snapshots = repository.client.table("deal_snapshots").select("*").eq("deal_id", deal_id).order("created_at", desc=True).limit(1).execute().data
-    matches = repository.client.table("buyer_matches").select("*").eq("deal_id", deal_id).order("match_score", desc=True).execute().data
-    activities = repository.client.table("activities").select("*").eq("organization_id", scope.organization_id).eq("deal_id", deal_id).order("created_at", desc=True).execute().data
-    return {"deal": deal, "analysis": analyses[0] if analyses else None, "snapshot": snapshots[0] if snapshots else None, "buyer_matches": matches, "activities": activities}
-
-@app.post("/api/v1/deals/{deal_id}/match-buyers")
-async def match_under_contract_buyers(deal_id: str, scope: OrganizationScope = Depends(require_organization_scope)):
-    repository = OrganizationRepository(scope.organization_id)
-    deal = repository.require_record("deals", deal_id, "deal")
-    if deal.get("current_stage") not in {"UNDER_CONTRACT", "BUYER_SEARCH"}:
-        raise HTTPException(status_code=409, detail={"code": "BUYER_MATCHING_REQUIRES_UNDER_CONTRACT", "message": "Official buyer matching begins only after the validated Under Contract transition."})
-    property_record = repository.require_record("properties", deal["property_id"], "property")
-    analysis_rows = repository.client.table("deal_analyses").select("result").eq("organization_id", scope.organization_id).eq("property_id", deal["property_id"]).order("calculated_at", desc=True).limit(1).execute().data
-    result = (analysis_rows[0].get("result") if analysis_rows else {}) or {}
-    candidate = DealCandidate(market=property_record.get("city") or "UNKNOWN", zip_code=property_record.get("zip") or "UNKNOWN", property_type=property_record.get("property_type") or "UNKNOWN", purchase_price=deal.get("purchase_price"), arv=((result.get("arv") or {}).get("value")), wholesale_spread=((result.get("wholesale_spread") or {}).get("value")), requires_financing=False, buyer_activity_score=None)
-    configuration = MatchConfiguration(high_confidence_threshold=0.75, medium_confidence_threshold=0.5)
-    buyers = repository.client.table("buyers").select("*").eq("organization_id", scope.organization_id).in_("status", ["active", "qualified"]).execute().data
-    buyer_ids = [buyer["id"] for buyer in buyers]
-    criteria_rows = repository.client.table("buyer_criteria").select("*").in_("buyer_id", buyer_ids).execute().data if buyer_ids else []
-    criteria_by_buyer = {row["buyer_id"]: row for row in criteria_rows}
-    ranked = []
-    for buyer in buyers:
-        criteria = criteria_by_buyer.get(buyer["id"])
-        if not criteria:
-            continue
-        price_range = criteria.get("price_range") or {}
-        arv_range = criteria.get("arv_range") or {}
-        match = match_buyer(candidate, BuyerCriteria(buyer_id=str(buyer["id"]), markets=set(criteria.get("markets") or []), zip_codes=set(criteria.get("zip_codes") or []), property_types=set(criteria.get("property_types") or []), price_min=price_range.get("min"), price_max=price_range.get("max"), arv_min=arv_range.get("min"), arv_max=arv_range.get("max"), minimum_spread=criteria.get("minimum_spread"), cash_only=bool(criteria.get("cash_only")), financing_available=bool(criteria.get("financing_available"))), configuration)
-        record = repository.client.table("buyer_matches").upsert({"deal_id": deal_id, "buyer_id": buyer["id"], "match_score": match.match_score, "match_reasons": match.match_reasons, "failed_criteria": match.failed_criteria, "confidence": match.confidence, "configuration": configuration.model_dump()}).execute().data[0]
-        ranked.append({"buyer": buyer, "match": match.model_dump(mode="json"), "record": record})
-    ranked.sort(key=lambda item: item["match"]["match_score"], reverse=True)
-    repository.append_activity("buyer_matching_completed", "Completed deterministic buyer matching for an Under Contract deal.", scope.user_id, deal_id, {"buyer_count": len(ranked), "stage": deal.get("current_stage")})
-    repository.append_audit("deal", deal_id, "buyer_matching_completed", scope.user_id, new_value={"buyer_count": len(ranked), "stage": deal.get("current_stage")})
-    return {"deal_id": deal_id, "status": "MATCHED", "matches": ranked, "configuration": configuration}
-
 @app.post("/api/v1/deals/{deal_id}/distribute")
 async def prepare_distribution(deal_id: str, payload: DistributionCreate, scope: OrganizationScope = Depends(require_organization_scope)):
     repository = OrganizationRepository(scope.organization_id)
@@ -322,107 +261,6 @@ async def record_closing(transaction_id: str, payload: ClosingRecord, scope: Org
 @app.post("/api/v1/deal-analysis")
 async def deal_analysis(payload: AnalysisInput, identity: AuthenticatedIdentity = Depends(require_authenticated_identity)):
     return calculate_analysis(payload)
-
-@app.post("/api/v1/underwriting/handoff")
-async def underwriting_handoff(payload: UnderwritingHandoffRequest, scope: OrganizationScope = Depends(require_organization_scope)):
-    """Refresh verified provider facts, calculate deterministic underwriting, and create a CRM analysis handoff.
-
-    Buyer results are a ranked preview at this stage. Official persisted buyer matching begins only after
-    the documented Under Contract transition creates the immutable contract snapshot.
-    """
-    try:
-        provider_name = require_property_provider()
-        provider = get_property_provider()
-        if provider_name != "realtyapi" or not isinstance(provider, RealtyApiAdapter):
-            raise HTTPException(status_code=501, detail={"code": "ADAPTER_ENDPOINT_REQUIRED", "message": "The configured provider adapter is not available."})
-        property_record = await provider.details_by_address(payload.address)
-    except IntegrationUnavailable as error:
-        raise HTTPException(status_code=503, detail={"code": error.code, "message": error.message}) from error
-    except httpx.HTTPStatusError as error:
-        raise HTTPException(status_code=502, detail={"code": "PROPERTY_PROVIDER_ERROR", "message": "The provider could not refresh verified property facts for underwriting."}) from error
-    except (httpx.HTTPError, ValueError) as error:
-        raise HTTPException(status_code=502, detail={"code": "PROPERTY_PROVIDER_ERROR", "message": "The provider property detail could not be normalized for underwriting."}) from error
-
-    repository = OrganizationRepository(scope.organization_id)
-    existing = repository.client.table("properties").select("id").eq("organization_id", scope.organization_id).eq("address", property_record.address).limit(1).execute().data
-    stored_property_id = existing[0]["id"] if existing else repository.create("properties", {
-        "address": property_record.address,
-        "city": property_record.city,
-        "state": property_record.state,
-        "zip": property_record.zip_code,
-        "latitude": property_record.latitude,
-        "longitude": property_record.longitude,
-        "property_type": property_record.property_type,
-        "beds": property_record.beds,
-        "baths": property_record.baths,
-        "living_area": property_record.living_area,
-        "lot_size": property_record.lot_size,
-        "year_built": property_record.year_built,
-        "listing_status": property_record.listing_status,
-        "days_on_market": property_record.days_on_market,
-        "estimated_value": property_record.estimated_market_value,
-        "data_quality_score": None,
-    })["id"]
-
-    def number(value: float | None, classification: DataClassification, source: str | None = None) -> ProvenancedNumber:
-        if value is None:
-            return ProvenancedNumber(classification=DataClassification.UNKNOWN)
-        return ProvenancedNumber(value=value, classification=classification, source=source, confidence="verified" if classification == DataClassification.SOURCE_DATA else "user-approved")
-
-    classification = DataClassification(payload.arv_classification)
-    assumptions = AnalysisAssumptions(
-        mao_percentage=number(payload.mao_percentage, DataClassification.USER_INPUT, "workspace underwriting input"),
-        desired_profit=number(payload.desired_profit, DataClassification.USER_INPUT, "workspace underwriting input"),
-        transaction_costs=number(payload.transaction_costs, DataClassification.USER_INPUT, "workspace underwriting input"),
-        holding_costs=number(payload.holding_costs, DataClassification.USER_INPUT, "workspace underwriting input"),
-        financing_costs=number(payload.financing_costs, DataClassification.USER_INPUT, "workspace underwriting input"),
-        other_costs=number(payload.other_costs, DataClassification.USER_INPUT, "workspace underwriting input"),
-        total_invested_capital=number(payload.total_invested_capital, DataClassification.USER_INPUT, "workspace underwriting input"),
-    )
-    analysis_input = AnalysisInput(
-        arv=number(payload.arv, classification, "comparable engine" if classification == DataClassification.CALCULATED_DATA else "user underwriting input"),
-        estimated_market_value=number(property_record.estimated_market_value, DataClassification.SOURCE_DATA, property_record.source),
-        outstanding_debt=number(None, DataClassification.UNKNOWN),
-        repair_cost=number(payload.repair_cost, DataClassification.USER_INPUT, "workspace underwriting input"),
-        purchase_contract_price=number(payload.purchase_contract_price, DataClassification.USER_INPUT, "workspace underwriting input"),
-        expected_assignment_price=number(payload.expected_assignment_price, DataClassification.USER_INPUT, "workspace underwriting input"),
-        asking_price=number(property_record.list_price, DataClassification.SOURCE_DATA, property_record.source),
-        expected_sale_price=number(payload.expected_sale_price, DataClassification.USER_INPUT, "workspace underwriting input"),
-        net_profit=number(payload.net_profit, DataClassification.USER_INPUT, "workspace underwriting input"),
-        assumptions=assumptions,
-    )
-    analysis = calculate_analysis(analysis_input)
-    deal = repository.create("deals", {
-        "property_id": stored_property_id,
-        "purchase_price": payload.purchase_contract_price,
-        "contract_price": payload.purchase_contract_price,
-        "current_stage": "QUALIFIED",
-        "notes": f"Provider-backed underwriting handoff for {property_record.address}. Source property id: {payload.property_id}.",
-    })
-    analysis_record = repository.create("deal_analyses", {"property_id": stored_property_id, "result": analysis.model_dump(mode="json"), "assumptions": assumptions.model_dump(mode="json"), "calculated_by": scope.user_id})
-    snapshot = repository.create("deal_snapshots", {"deal_id": deal["id"], "snapshot_type": "underwriting_analysis", "analysis_data": {"analysis_id": analysis_record["id"], "result": analysis.model_dump(mode="json"), "provider_property": property_record.model_dump(mode="json")}})
-    repository.append_activity("underwriting_completed", "Completed deterministic underwriting and created a CRM deal handoff.", scope.user_id, deal["id"], {"analysis_id": analysis_record["id"], "snapshot_id": snapshot["id"], "stage": "QUALIFIED"})
-    repository.append_audit("deal", deal["id"], "underwriting_handoff", scope.user_id, new_value={"deal_id": deal["id"], "analysis_id": analysis_record["id"], "snapshot_id": snapshot["id"], "provider": property_record.source})
-
-    preview: list[dict] = []
-    buyers = repository.client.table("buyers").select("*").eq("organization_id", scope.organization_id).in_("status", ["active", "qualified"]).execute().data
-    if buyers:
-        buyer_ids = [buyer["id"] for buyer in buyers]
-        criteria_rows = repository.client.table("buyer_criteria").select("*").in_("buyer_id", buyer_ids).execute().data
-        criteria_by_buyer = {row["buyer_id"]: row for row in criteria_rows}
-        candidate = DealCandidate(market=payload.buyer_match_market or property_record.city, zip_code=property_record.zip_code, property_type=property_record.property_type, purchase_price=payload.purchase_contract_price, arv=analysis.arv.value, wholesale_spread=analysis.wholesale_spread.value, requires_financing=payload.requires_financing, buyer_activity_score=None)
-        configuration = MatchConfiguration(high_confidence_threshold=0.75, medium_confidence_threshold=0.5)
-        for buyer in buyers:
-            criteria = criteria_by_buyer.get(buyer["id"])
-            if not criteria:
-                continue
-            price_range = criteria.get("price_range") or {}
-            arv_range = criteria.get("arv_range") or {}
-            match = match_buyer(candidate, BuyerCriteria(buyer_id=str(buyer["id"],), markets=set(criteria.get("markets") or []), zip_codes=set(criteria.get("zip_codes") or []), property_types=set(criteria.get("property_types") or []), price_min=price_range.get("min"), price_max=price_range.get("max"), arv_min=arv_range.get("min"), arv_max=arv_range.get("max"), minimum_spread=criteria.get("minimum_spread"), cash_only=bool(criteria.get("cash_only")), financing_available=bool(criteria.get("financing_available"))), configuration)
-            preview.append({"buyer": {"id": buyer["id"], "name": buyer["name"], "company": buyer.get("company"), "status": buyer.get("status")}, "match": match.model_dump(mode="json")})
-        preview.sort(key=lambda item: item["match"]["match_score"], reverse=True)
-    repository.append_activity("buyer_match_preview_ready", "Prepared deterministic buyer-fit preview; official matching remains gated by Under Contract.", scope.user_id, deal["id"], {"buyer_count": len(preview), "status": "preview_only_until_under_contract"})
-    return {"deal": deal, "analysis": analysis, "snapshot": snapshot, "provider_property": property_record, "buyer_preview": preview, "matching_status": "PREVIEW_ONLY_UNTIL_UNDER_CONTRACT"}
 
 @app.post("/api/v1/deals/validate-transition")
 async def validate_deal_transition(payload: TransitionInput, identity: AuthenticatedIdentity = Depends(require_authenticated_identity)):
