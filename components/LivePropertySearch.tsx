@@ -43,24 +43,31 @@ export function LivePropertySearch() {
   const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
 
   useEffect(() => {
-    const client = getSupabaseBrowserClient();
-    if (!client) {
-      setAuthReady(true);
-      return;
-    }
-    const persistedSession = getPersistedSupabaseSession();
-    setSignedInEmail(persistedSession?.user.email ?? null);
-    const sessionCheck = client.auth.getSession().then(({ data }) => data.session).catch(() => null);
-    void Promise.race([sessionCheck, new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 1500))]).then((session) => {
+    let active = true;
+    let unsubscribe: () => void = () => {};
+    const finishAuthCheck = (session: Awaited<ReturnType<NonNullable<ReturnType<typeof getSupabaseBrowserClient>>["auth"]["getSession"]>>["data"]["session"] | null) => {
+      if (!active) return;
+      const persistedSession = getPersistedSupabaseSession();
       const resolvedSession = session ?? persistedSession;
       setSignedInEmail(resolvedSession?.user.email ?? null);
       setAuthReady(true);
-    });
-    const { data: listener } = client.auth.onAuthStateChange((_event, session) => {
-      setSignedInEmail(session?.user.email ?? null);
-      setAuthReady(true);
-    });
-    return () => listener.subscription.unsubscribe();
+    };
+    const fallbackTimer = window.setTimeout(() => finishAuthCheck(null), 1600);
+    try {
+      const client = getSupabaseBrowserClient();
+      const persistedSession = getPersistedSupabaseSession();
+      setSignedInEmail(persistedSession?.user.email ?? null);
+      if (!client) {
+        finishAuthCheck(null);
+        return () => { active = false; window.clearTimeout(fallbackTimer); };
+      }
+      void client.auth.getSession().then(({ data }) => finishAuthCheck(data.session)).catch(() => finishAuthCheck(null));
+      const { data: listener } = client.auth.onAuthStateChange((_event, session) => finishAuthCheck(session));
+      unsubscribe = () => listener.subscription.unsubscribe();
+    } catch {
+      finishAuthCheck(null);
+    }
+    return () => { active = false; window.clearTimeout(fallbackTimer); unsubscribe(); };
   }, []);
 
   async function submit(event?: FormEvent, requestedPage = 1) {
@@ -80,6 +87,8 @@ export function LivePropertySearch() {
         ? await Promise.race([client.auth.getSession().then(({ data }) => data.session).catch(() => null), new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 1500))])
         : null;
       const resolvedSession = session ?? persistedSession;
+      setSignedInEmail(resolvedSession?.user.email ?? null);
+      setAuthReady(true);
       const accessToken = resolvedSession?.access_token;
       if (!accessToken) {
         setAccessIssue("auth");

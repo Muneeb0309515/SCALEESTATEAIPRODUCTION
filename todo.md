@@ -112,3 +112,7 @@
 - [x] Add regression coverage for live property-detail hydration, missing provider records, and organization access boundaries.
 - [x] Extend the browser regression to open a live search result and assert the property-intelligence view renders the provider-backed address and freshness metadata.
 - [x] Update the global workspace status to distinguish signed-in provider-ready state from unauthenticated access-required state.
+
+- [x] Roll back to checkpoint 149db047 and verify the workspace authentication loop is removed and property search remains responsive.
+
+- [x] Fix property-search authentication status remaining on “Checking workspace authentication…” during search submission while preserving Supabase organization authorization.
