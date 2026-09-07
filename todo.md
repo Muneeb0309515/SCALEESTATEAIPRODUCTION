@@ -118,3 +118,5 @@
 - [x] Fix property-search authentication status remaining on “Checking workspace authentication…” during search submission while preserving Supabase organization authorization.
 
 - [x] Add a direct sign-in action to the property-search access-required state and preserve the current search query for return after authentication.
+
+- [x] Add a working workspace sign-out control that calls Supabase signOut, clears the persisted browser session, and returns the user to sign-in.

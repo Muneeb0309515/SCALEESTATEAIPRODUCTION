@@ -19,6 +19,13 @@ describe("approved SCALEESTATE architecture", () => {
     expect(search).toContain('params.set("status", status)');
     expect(nextConfig).toContain("3000-iz9chabu4d2hf544lzxnj-e1a973e9.us3.manus.computer");
   });
+  it("keeps workspace sign-out wired to Supabase session cleanup", () => {
+    const shell = readFileSync("components/WorkspaceShell.tsx", "utf8");
+    expect(shell).toContain("client.auth.signOut()");
+    expect(shell).toContain("localStorage.removeItem");
+    expect(shell).toContain('window.location.assign("/sign-in")');
+    expect(shell).toContain('aria-label="Sign out of workspace"');
+  });
   it("preserves search context through the direct sign-in handoff", () => {
     const search = readFileSync("components/LivePropertySearch.tsx", "utf8");
     const signInPage = readFileSync("app/sign-in/page.tsx", "utf8");
