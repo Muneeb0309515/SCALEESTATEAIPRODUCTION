@@ -19,4 +19,15 @@ describe("approved SCALEESTATE architecture", () => {
     expect(search).toContain('params.set("status", status)');
     expect(nextConfig).toContain("3000-iz9chabu4d2hf544lzxnj-e1a973e9.us3.manus.computer");
   });
+  it("preserves search context through the direct sign-in handoff", () => {
+    const search = readFileSync("components/LivePropertySearch.tsx", "utf8");
+    const signInPage = readFileSync("app/sign-in/page.tsx", "utf8");
+    const signInForm = readFileSync("app/sign-in/SignInForm.tsx", "utf8");
+    expect(search).toContain("buildSearchReturnPath");
+    expect(search).toContain("Sign in to continue");
+    expect(search).toContain("/sign-in?next=");
+    expect(signInPage).toContain("nextPath");
+    expect(signInPage).toContain("!requestedNext.startsWith(\"//\")");
+    expect(signInForm).toContain("window.location.assign(redirectRef.current)");
+  });
 });

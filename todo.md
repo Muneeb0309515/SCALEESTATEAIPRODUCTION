@@ -116,3 +116,5 @@
 - [x] Roll back to checkpoint 149db047 and verify the workspace authentication loop is removed and property search remains responsive.
 
 - [x] Fix property-search authentication status remaining on “Checking workspace authentication…” during search submission while preserving Supabase organization authorization.
+
+- [x] Add a direct sign-in action to the property-search access-required state and preserve the current search query for return after authentication.

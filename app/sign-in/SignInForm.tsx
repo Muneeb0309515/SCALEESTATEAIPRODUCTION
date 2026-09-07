@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
-export function SignInForm() {
+export function SignInForm({ nextPath = "/search" }: { nextPath?: string }) {
   const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
+  const redirectRef = useRef(nextPath.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/search");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -31,7 +32,7 @@ export function SignInForm() {
     } else if (mode === "sign-up" && !result.data.session) {
       setMessage("Account created. Check your email to confirm the account, then sign in.");
     } else {
-      window.location.assign("/search");
+      window.location.assign(redirectRef.current);
     }
     setLoading(false);
   }
@@ -43,6 +44,6 @@ export function SignInForm() {
     {message && <p className="auth-message" role="status">{message}</p>}
     <button className="button button-primary auth-submit" type="submit" disabled={loading}>{loading ? "Working…" : mode === "sign-in" ? "Sign in" : "Create account"}</button>
     <button className="plain-link auth-mode" type="button" onClick={() => { setMode(mode === "sign-in" ? "sign-up" : "sign-in"); setError(""); setMessage(""); }}>{mode === "sign-in" ? "Need an account? Create one" : "Already have an account? Sign in"}</button>
-    <Link href="/search" className="plain-link">Return to workspace</Link>
+    <Link href={redirectRef.current} className="plain-link">Return to workspace</Link>
   </form>;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { getPersistedSupabaseSession, getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { ArrowRight, ChevronLeft, ChevronRight, Filter, MapPinned, Search, ShieldCheck } from "lucide-react";
 
@@ -41,6 +41,19 @@ export function LivePropertySearch() {
   const [accessIssue, setAccessIssue] = useState<"auth" | "organization" | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
+  const resumedSearch = useRef(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const restoredLocation = params.get("location");
+    if (restoredLocation) setLocation(restoredLocation);
+    setPropertyType(params.get("property_type") ?? "");
+    setStatus(params.get("status") ?? "");
+    setMaxPrice(params.get("max_price") ?? "");
+    setMinBeds(params.get("min_beds") ?? "");
+    const restoredPage = Number(params.get("page") ?? "1");
+    if (Number.isInteger(restoredPage) && restoredPage > 0) setPage(restoredPage);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -69,6 +82,14 @@ export function LivePropertySearch() {
     }
     return () => { active = false; window.clearTimeout(fallbackTimer); unsubscribe(); };
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!authReady || !signedInEmail || !location.trim() || params.get("resume") !== "1" || resumedSearch.current) return;
+    resumedSearch.current = true;
+    const restoredPage = Number(params.get("page") ?? "1");
+    void submit(undefined, Number.isInteger(restoredPage) && restoredPage > 0 ? restoredPage : 1);
+  }, [authReady, signedInEmail, location]);
 
   async function submit(event?: FormEvent, requestedPage = 1) {
     event?.preventDefault();
@@ -139,10 +160,25 @@ export function LivePropertySearch() {
     window.setTimeout(() => void submit(undefined, nextPage), 0);
   }
 
+  function buildSearchReturnPath() {
+    const params = new URLSearchParams();
+    if (location.trim()) params.set("location", location.trim());
+    if (propertyType) params.set("property_type", propertyType);
+    if (status) params.set("status", status);
+    if (maxPrice) params.set("max_price", maxPrice);
+    if (minBeds) params.set("min_beds", minBeds);
+    if (page > 1) params.set("page", String(page));
+    const query = params.toString();
+    const resumedQuery = query ? `${query}&resume=1` : "resume=1";
+    return `/search?${resumedQuery}`;
+  }
+
+  const signInHref = `/sign-in?next=${encodeURIComponent(buildSearchReturnPath())}`;
+
   return <>
     <header className="screen-header"><div><p className="eyebrow">Property discovery</p><h1>Find the next defensible opportunity.</h1><p>Search Realtor listings through RealtyAPI.io, retain source context, and move only verified records into research.</p></div><Link href="/settings" className="button button-secondary"><ShieldCheck size={16} /> Provider status</Link></header>
     <div className="status-banner"><ShieldCheck size={18} /><p><strong>Live provider connected.</strong> RealtyAPI.io is configured server-side. {authReady ? signedInEmail ? `Authenticated as ${signedInEmail}.` : "Sign in before submitting a live search." : "Checking workspace authentication…"}</p><span>REALTYAPI.IO</span></div>
-    <form className="panel filter-panel" onSubmit={submit}><div className="filter-topline"><div><span className="eyebrow">Search criteria</span><p>Search by city, ZIP, neighborhood, or county. Every result retains provider freshness.</p></div><Link href="/search" className="text-button"><Filter size={15} /> Saved criteria</Link></div><div className="filters"><label className="filter-field wide"><span>Location</span><input aria-label="Location" className="live-input" value={location} onChange={(event) => { setLocation(event.target.value); setPage(1); }} placeholder="Austin, TX or 78744" /></label><label className="filter-field"><span>Property category</span><select aria-label="Property category" className="live-input" value={propertyType} onChange={(event) => { setPropertyType(event.target.value); setPage(1); }}><option value="">All property types</option><option value="single_family">Single family</option><option value="condo">Condominium</option><option value="townhome">Townhome</option><option value="multi_family">Multi-family</option><option value="land">Land</option></select></label><label className="filter-field"><span>Listing status</span><select aria-label="Listing status" className="live-input" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="">Active & pending</option><option value="for_sale">For sale</option><option value="pending">Pending</option><option value="sold">Sold</option></select></label><label className="filter-field"><span>Maximum price</span><select aria-label="Maximum price" className="live-input" value={maxPrice} onChange={(event) => { setMaxPrice(event.target.value); setPage(1); }}><option value="">Any price</option><option value="200000">$200,000</option><option value="300000">$300,000</option><option value="500000">$500,000</option><option value="750000">$750,000</option></select></label><label className="filter-field"><span>Minimum beds</span><select aria-label="Minimum beds" className="live-input" value={minBeds} onChange={(event) => { setMinBeds(event.target.value); setPage(1); }}><option value="">Any bedrooms</option><option value="2">2+ bedrooms</option><option value="3">3+ bedrooms</option><option value="4">4+ bedrooms</option></select></label></div><div className="filter-footer"><span><Filter size={14} /> RealtyAPI.io search route ready</span><button className="button button-primary" type="submit" disabled={loading}><Search size={16} /> {loading ? "Searching…" : "Search properties"}</button></div>{error && <div className="form-error" role="alert"><span>{error}</span>{accessIssue && <Link href={accessIssue === "organization" ? "/settings" : "/sign-in"} className="text-button">Review access state</Link>}</div>}</form>
+    <form className="panel filter-panel" onSubmit={submit}><div className="filter-topline"><div><span className="eyebrow">Search criteria</span><p>Search by city, ZIP, neighborhood, or county. Every result retains provider freshness.</p></div><Link href="/search" className="text-button"><Filter size={15} /> Saved criteria</Link></div><div className="filters"><label className="filter-field wide"><span>Location</span><input aria-label="Location" className="live-input" value={location} onChange={(event) => { setLocation(event.target.value); setPage(1); }} placeholder="Austin, TX or 78744" /></label><label className="filter-field"><span>Property category</span><select aria-label="Property category" className="live-input" value={propertyType} onChange={(event) => { setPropertyType(event.target.value); setPage(1); }}><option value="">All property types</option><option value="single_family">Single family</option><option value="condo">Condominium</option><option value="townhome">Townhome</option><option value="multi_family">Multi-family</option><option value="land">Land</option></select></label><label className="filter-field"><span>Listing status</span><select aria-label="Listing status" className="live-input" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="">Active & pending</option><option value="for_sale">For sale</option><option value="pending">Pending</option><option value="sold">Sold</option></select></label><label className="filter-field"><span>Maximum price</span><select aria-label="Maximum price" className="live-input" value={maxPrice} onChange={(event) => { setMaxPrice(event.target.value); setPage(1); }}><option value="">Any price</option><option value="200000">$200,000</option><option value="300000">$300,000</option><option value="500000">$500,000</option><option value="750000">$750,000</option></select></label><label className="filter-field"><span>Minimum beds</span><select aria-label="Minimum beds" className="live-input" value={minBeds} onChange={(event) => { setMinBeds(event.target.value); setPage(1); }}><option value="">Any bedrooms</option><option value="2">2+ bedrooms</option><option value="3">3+ bedrooms</option><option value="4">4+ bedrooms</option></select></label></div><div className="filter-footer"><span><Filter size={14} /> RealtyAPI.io search route ready</span><button className="button button-primary" type="submit" disabled={loading}><Search size={16} /> {loading ? "Searching…" : "Search properties"}</button></div>{error && <div className="form-error" role="alert"><span>{error}</span>{accessIssue === "auth" ? <Link href={signInHref} className="button button-primary">Sign in to continue</Link> : accessIssue === "organization" ? <Link href="/settings" className="text-button">Review organization access</Link> : null}</div>}</form>
     <div className="split-layout search-split"><section className="panel"><header className="panel-heading"><div><h2>Search results</h2><p>{total ? `${total.toLocaleString()} source-backed listings` : "Paginated provider results with source-bound property handoff."}</p></div></header><div className="result-toolbar"><span>{results.length ? `Page ${page}` : "Awaiting search"}</span><div><button type="button" className="view-switch active">List</button><button type="button" className="view-switch" disabled>Map</button></div></div>{results.length ? <div className="live-results">{results.map((property) => <Link className="live-result" href={`/properties/${property.provider_property_id}?address=${encodeURIComponent(property.address)}`} key={property.provider_property_id}><div><strong>{property.address}</strong><span>{property.city}, {property.state} {property.zip_code} · {property.property_type}</span></div><div className="result-meta"><strong>{property.list_price ? `$${property.list_price.toLocaleString()}` : "Price unavailable"}</strong><span>{property.beds ?? "—"} bd · {property.baths ?? "—"} ba · {property.living_area ? `${property.living_area.toLocaleString()} sf` : "—"}</span><span className="result-provenance">Source: {property.source} · Updated {new Date(property.data_updated_at).toLocaleDateString()}</span></div><ArrowRight size={16} /></Link>)}</div> : <div className="empty-state"><span className="empty-icon"><Search size={22} /></span><h3>{error ? "Search could not be completed" : "No source records loaded"}</h3><p>{error || "Enter a location to retrieve live Realtor listings. No property record is inferred or seeded."}</p></div>}<div className="pagination"><button className="text-button" type="button" disabled={page <= 1 || loading} onClick={() => changePage(page - 1)}><ChevronLeft size={14} /> Previous</button><span>{results.length ? `Page ${page}` : "No page selected"}</span><button className="text-button" type="button" disabled={!hasNextPage || loading} onClick={() => changePage(page + 1)}>Next <ChevronRight size={14} /></button></div></section><section className="panel"><header className="panel-heading"><div><h2>Map exploration</h2><p>Only provider coordinates are placed on the map.</p></div></header><div className="map-placeholder"><MapPinned size={32} /><strong>{results.length ? "Map handoff available" : "Map awaits a search"}</strong><p>{results.length ? "Open a property to research its verified coordinates and history." : "Search with a city or ZIP to retrieve verified coordinates."}</p></div></section></div>
     <section className="panel"><header className="panel-heading"><div><h2>Saved-search entry points</h2><p>Saved criteria remain organization-scoped and require authenticated persistence.</p></div></header><div className="saved-search-grid"><div><strong>Investment criteria fit</strong><p>Property-fit scoring uses documented deterministic inputs, not an AI estimate.</p></div><div><strong>Freshness controls</strong><p>Every result includes RealtyAPI.io provenance and retrieval time.</p></div><div><strong>Research handoff</strong><p>Open a listing by provider property id to begin property intelligence review.</p></div></div></section>
   </>;
