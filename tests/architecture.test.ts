@@ -18,6 +18,7 @@ describe("approved SCALEESTATE architecture", () => {
     expect(search).toContain('params.set("property_type", propertyType)');
     expect(search).toContain('params.set("status", status)');
     expect(nextConfig).toContain("3000-iz9chabu4d2hf544lzxnj-e1a973e9.us3.manus.computer");
+    expect(nextConfig).toContain("3000-ifk2c0egk8r030vh4b39k-2c723fe6.us1.manus.computer");
   });
   it("keeps workspace sign-out wired to Supabase session cleanup", () => {
     const shell = readFileSync("components/WorkspaceShell.tsx", "utf8");

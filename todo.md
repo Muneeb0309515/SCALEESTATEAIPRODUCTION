@@ -120,3 +120,5 @@
 - [x] Add a direct sign-in action to the property-search access-required state and preserve the current search query for return after authentication.
 
 - [x] Add a working workspace sign-out control that calls Supabase signOut, clears the persisted browser session, and returns the user to sign-in.
+
+- [x] Fix property search submission refreshing to a blank page instead of staying on search and rendering results or a truthful error state.
