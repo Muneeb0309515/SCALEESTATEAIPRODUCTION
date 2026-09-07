@@ -42,9 +42,17 @@ export function LivePropertySearch() {
   const [authReady, setAuthReady] = useState(false);
   const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
   const resumedSearch = useRef(false);
+  const shouldResumeSearch = useRef(false);
+  const searchRequestInFlight = useRef(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    shouldResumeSearch.current = params.get("resume") === "1";
+    if (shouldResumeSearch.current) {
+      params.delete("resume");
+      const cleanQuery = params.toString();
+      window.history.replaceState(null, "", cleanQuery ? `${window.location.pathname}?${cleanQuery}` : window.location.pathname);
+    }
     const restoredLocation = params.get("location");
     if (restoredLocation) setLocation(restoredLocation);
     setPropertyType(params.get("property_type") ?? "");
@@ -84,18 +92,22 @@ export function LivePropertySearch() {
   }, []);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (!authReady || !signedInEmail || !location.trim() || params.get("resume") !== "1" || resumedSearch.current) return;
+    if (!authReady || !signedInEmail || !location.trim() || !shouldResumeSearch.current || resumedSearch.current) return;
     resumedSearch.current = true;
-    const restoredPage = Number(params.get("page") ?? "1");
+    const restoredPage = Number(new URLSearchParams(window.location.search).get("page") ?? "1");
     void submit(undefined, Number.isInteger(restoredPage) && restoredPage > 0 ? restoredPage : 1);
   }, [authReady, signedInEmail, location]);
 
   async function submit(event?: FormEvent, requestedPage = 1) {
     event?.preventDefault();
+    event?.stopPropagation();
+    if (searchRequestInFlight.current) return;
+    searchRequestInFlight.current = true;
     setPage(requestedPage);
     if (!location.trim()) {
       setError("Enter a city, ZIP code, neighborhood, or county to search.");
+      searchRequestInFlight.current = false;
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -151,6 +163,7 @@ export function LivePropertySearch() {
       setHasNextPage(false);
       setError(caught instanceof Error ? caught.message : "Property search is unavailable.");
     } finally {
+      searchRequestInFlight.current = false;
       setLoading(false);
     }
   }

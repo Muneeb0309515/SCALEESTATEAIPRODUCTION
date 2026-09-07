@@ -122,3 +122,5 @@
 - [x] Add a working workspace sign-out control that calls Supabase signOut, clears the persisted browser session, and returns the user to sign-in.
 
 - [x] Fix property search submission refreshing to a blank page instead of staying on search and rendering results or a truthful error state.
+
+- [x] Stop the frontend infinite refresh or duplicate-search loop after successful property search while preserving valid auth, organization scope, and result rendering.

@@ -20,6 +20,13 @@ describe("approved SCALEESTATE architecture", () => {
     expect(nextConfig).toContain("3000-iz9chabu4d2hf544lzxnj-e1a973e9.us3.manus.computer");
     expect(nextConfig).toContain("3000-ifk2c0egk8r030vh4b39k-2c723fe6.us1.manus.computer");
   });
+  it("guards search resume and duplicate submissions", () => {
+    const search = readFileSync("components/LivePropertySearch.tsx", "utf8");
+    expect(search).toContain("searchRequestInFlight");
+    expect(search).toContain("event?.stopPropagation()");
+    expect(search).toContain('params.delete("resume")');
+    expect(search).toContain("window.history.replaceState");
+  });
   it("keeps workspace sign-out wired to Supabase session cleanup", () => {
     const shell = readFileSync("components/WorkspaceShell.tsx", "utf8");
     expect(shell).toContain("client.auth.signOut()");
