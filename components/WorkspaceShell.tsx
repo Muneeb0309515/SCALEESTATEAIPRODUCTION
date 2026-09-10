@@ -1,0 +1,53 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { getPersistedSupabaseSession, getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { Building2, ChevronDown, ClipboardCheck, FileText, Home, Landmark, Search, Settings, UsersRound } from "lucide-react";
+
+const navigation = [
+  { href: "/dashboard", label: "Dashboard", icon: Home }, { href: "/search", label: "Search", icon: Search }, { href: "/properties", label: "Properties", icon: Building2 }, { href: "/deals", label: "Deals", icon: ClipboardCheck }, { href: "/sellers", label: "Sellers", icon: UsersRound }, { href: "/buyers", label: "Buyers", icon: Landmark }, { href: "/contracts", label: "Contracts", icon: FileText }, { href: "/settings", label: "Settings", icon: Settings },
+];
+
+export function WorkspaceShell({ children }: Readonly<{ children: React.ReactNode }>) {
+  const pathname = usePathname();
+  const [authState, setAuthState] = useState<"checking" | "signed_in" | "signed_out">("checking");
+  useEffect(() => {
+    let active = true;
+    let unsubscribe: () => void = () => {};
+    const finishAuthCheck = (session: { access_token?: string } | null) => {
+      if (active) setAuthState(session?.access_token ? "signed_in" : "signed_out");
+    };
+    const persisted = getPersistedSupabaseSession();
+    finishAuthCheck(persisted);
+    const fallbackTimer = window.setTimeout(() => finishAuthCheck(null), 1600);
+    try {
+      const client = getSupabaseBrowserClient();
+      if (!client) {
+        finishAuthCheck(null);
+      } else {
+        void client.auth.getSession().then(({ data }) => finishAuthCheck(data.session)).catch(() => finishAuthCheck(null));
+        const { data: listener } = client.auth.onAuthStateChange((_event, session) => finishAuthCheck(session));
+        unsubscribe = () => listener.subscription.unsubscribe();
+      }
+    } catch {
+      finishAuthCheck(null);
+    }
+    return () => { active = false; window.clearTimeout(fallbackTimer); unsubscribe(); };
+  }, []);
+  const statusText = authState === "signed_in" ? "Authenticated organization scope active" : authState === "signed_out" ? "Preview mode · sign in for live records" : "Checking authentication scope…";
+  async function handleSignOut() {
+    const client = getSupabaseBrowserClient();
+    try {
+      if (client) await client.auth.signOut();
+    } finally {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      if (typeof window !== "undefined" && supabaseUrl) {
+        window.localStorage.removeItem(`sb-${new URL(supabaseUrl).hostname.split(".")[0]}-auth-token`);
+      }
+      window.location.assign("/sign-in");
+    }
+  }
+  return <main className="app-frame"><aside className="sidebar" aria-label="Primary navigation"><Link href="/dashboard" className="brand" aria-label="SCALEESTATE AI home"><span className="brand-mark"><Building2 size={18} strokeWidth={2.3} /></span><span><strong>SCALE</strong><em>ESTATE</em></span></Link><p className="brand-subtitle">Investment operating system</p><nav className="nav-list"><p className="nav-caption">Workspace</p>{navigation.map(({ href, label, icon: Icon }) => <Link key={href} href={href} className={`nav-link ${href === "/search" ? pathname === href ? "active" : "" : pathname.startsWith(href) ? "active" : ""}`}><Icon size={17} /><span>{label}</span></Link>)}</nav><section className="sidebar-status" aria-label="Workspace status"><span className="status-dot" /><div><p>Provider-ready workspace</p><span>{statusText}</span></div></section><button className="profile-control" type="button" aria-label="Sign out of workspace" onClick={() => void handleSignOut()}><span className="avatar">SE</span><span><strong>Workspace</strong><small>{authState === "signed_in" ? "Sign out" : "Preview environment"}</small></span><ChevronDown size={15} /></button></aside><section className="workspace-shell"><header className="topbar"><div className="breadcrumb"><span>Workspace</span><i /> <strong>{navigation.find((item) => pathname.startsWith(item.href))?.label ?? "Search"}</strong></div><span className="state-pill"><i /> {authState === "signed_in" ? "Authenticated · organization scoped" : "Preview · live data unavailable"}</span></header><section className="page-area">{children}</section></section><nav className="mobile-nav" aria-label="Mobile navigation">{navigation.slice(0, 5).map(({ href, label, icon: Icon }) => <Link key={href} href={href} className={pathname.startsWith(href) ? "active" : ""}><Icon size={17} /><span>{label}</span></Link>)}</nav></main>;
+}

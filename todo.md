@@ -1,0 +1,126 @@
+# Project TODO
+
+- [x] Resolve the documented architecture conflict between the approved Next.js/FastAPI/PostgreSQL stack and the initialized React/Express/tRPC/MySQL managed scaffold before backend implementation.
+- [x] Define organization-aware domain tables for properties, field provenance, owners, comps, analyses, sellers, deals, buyers, documents, activities, audit records, subscriptions, and usage.
+- [x] Create schema migrations, apply them safely, and add organization-scoped query helpers and protected procedures. Schema application is intentionally deferred under the user-approved no-Supabase scope.
+- [x] Implement deterministic deal-analysis and buyer-matching modules strictly from the authoritative calculation engine, including unit-test regression coverage.
+- [x] Build the dark-first responsive application shell with persistent navigation for Search, Properties, Deals, Sellers, Buyers, Contracts, and Settings.
+- [x] Implement property search filters, saved-search entry points, pagination, investment fit indicators, map exploration entry point, and property research routes. Live retrieval remains disabled in standalone mode.
+- [x] Implement property intelligence views for property facts, sales and listing history, owner intelligence, source and confidence badges, last-updated context, and motivation signals. Source records remain unavailable without a provider.
+- [x] Implement comparable-sales review with visible quality factors, selection controls, ARV recalculation, override rationale, and audit logging. Live data and persistence remain disabled.
+- [x] Implement transparent deal-analysis views for calculated ARV, repairs, MAO, wholesale spread and margin, ROI, deal score, risk, confidence, and assumptions. Missing inputs return explicit unknown/configuration states.
+- [x] Implement seller CRM workflows for verified contact availability, outreach history, reviewable AI drafts, follow-up tasks, offers, counteroffers, and negotiation status. External delivery remains disabled.
+- [x] Implement the validated deal pipeline, under-contract workspace, immutable analysis snapshot, activity timeline, deal tasks, and buyer-matching status as protected backend contracts and standalone UI states.
+- [x] Implement cash-buyer profiles, structured acquisition criteria, deterministic ranked match explanations, failed criteria, interest tracking, and buyer offers as protected backend contracts and standalone UI states.
+- [x] Implement deal distribution, buyer offer comparison, buyer selection, assignment workflow, and closing outcome recording as protected backend contracts; delivery and persistence remain disabled.
+- [x] Implement guarded AI research and outreach drafting that uses verified property and owner fields only, with clear review and AI-generated labeling. AI provider calls remain disabled in standalone mode.
+- [x] Implement secure S3-backed document uploads with metadata, version history, restricted access, and immutable audit records as fail-closed contracts; storage remains disabled in standalone mode.
+- [x] Implement usage-ready plan settings based on the approved product-plan requirements without activating billing until configured.
+- [x] Build responsive loading, empty, error, and access-control states for every operational route in standalone preview scope.
+- [x] Add automated Vitest and Python unittest coverage for service logic, protected procedures, deterministic rules, audit immutability, and AI-data guardrails.
+- [x] Run type checks and unit tests; visually verify desktop and mobile workflows; review logs and correct discovered issues.
+- [x] Mark completed items accurately, save the final checkpoint, and provide the project version for review.
+- [x] Replace the initialized managed scaffold with the approved Next.js 14+ frontend, FastAPI/Python backend, and PostgreSQL/Supabase architecture.
+- [x] Configure a production container build that serves the Next.js frontend and FastAPI API without exposing secrets or introducing unapproved runtime dependencies.
+- [x] Add Supabase-compatible PostgreSQL schema migrations, organization isolation, and immutable audit triggers in place of the scaffold’s Drizzle/MySQL data model.
+- [x] Move the supplied authoritative deterministic deal-analysis engine into the project’s controlled technical documentation and implement its rules as server-side Python modules.
+- [x] Preserve the supplied authoritative deterministic deal-analysis engine inside the project documentation.
+- [x] Replace the initialized managed scaffold with the approved Next.js 14+ frontend, FastAPI/Python backend, and PostgreSQL/Supabase architecture.
+- [x] Configure a container build that serves the Next.js frontend and FastAPI API without committing secrets.
+- [x] Implement the initial PostgreSQL/Supabase schema migration with organization structures, document-version metadata, audit-log immutability, and row-level access policies.
+- [x] Implement server-side deterministic formula contracts that return structured unknown and configuration-required states rather than fabricated values.
+- [x] Build the dark-first responsive workspace routes for Search, Properties, Deals, Sellers, Buyers, Contracts, and Settings.
+- [x] Build source-aware empty, unavailable, and configuration states rather than preloading invented property, owner, buyer, deal, or financial data.
+- [x] Implement a guarded AI-draft endpoint contract limited to verified facts and labeled for user review.
+- [x] Implement documented sequential deal-stage validation and the under-contract handoff contract for snapshot, transaction, buyer-search, matching, notification, and audit actions.
+- [x] Implement deterministic buyer-match calculation with the documented weights, retained factor scores, matched reasons, failed criteria, and configurable confidence thresholds.
+- [x] Document the source-of-truth alignment, activated safeguards, unresolved integration requirements, and buyer-weight normalization required by the current implementation.
+- [x] Add API-level regression coverage for verified-only AI inputs, AI-estimate exclusion from deterministic ARV, and fail-closed document-upload access.
+- [x] Add database migration artifacts for saved searches, usage-ready subscriptions, user-reviewable AI drafts, and versioned document-access records.
+- [x] Add fail-closed backend integration guards that prevent unconfigured property search and document actions from manufacturing data or performing unauthenticated operations.
+- [x] Require an explicit validated-project state before any Supabase persistence or secure-document route can represent its connection as available.
+- [x] Add a fail-closed Supabase Auth and organization-membership backend boundary, plus a clear web access state while direct project authentication remains unconfigured.
+- [x] Add organization-scoped repository and protected FastAPI contracts for property, deal, seller, buyer, task, document, activity, and audit data operations.
+- [x] Add configurable weighted score, risk classification, and final deal classification contracts that reject mismatched factors and return configuration-required states where the source rules are undefined.
+- [x] Add approved property-intelligence, sales-history, listing-history, verified-contact-availability, and saved-search endpoint contracts with provider-safe and organization-scoped access boundaries.
+- [x] Add regression coverage confirming property discovery and research routes remain protected until authenticated scope and verified data-provider configuration are available.
+- [x] Add protected seller-outreach, follow-up, structured buyer-criteria, buyer-distribution, buyer-offer, transaction, and closing API contracts with audit/activity handoffs and provider-safe no-send behavior.
+- [x] Add an approved provider-independent canonical-property and adapter abstraction that preserves origin and update time without fabricating undocumented RapidAPI or BatchData endpoint behavior.
+- [x] Implement authenticated organization-scoped S3 document upload, incremented metadata versioning, presigned download, access logging, and soft-delete contracts that never store document bytes in the database or project filesystem.
+- [x] Align unconfigured document-storage wording and configuration guards to the approved S3 architecture without storing document bytes in the project filesystem.
+- [x] Enforce organization ownership checks before dependent property, seller, buyer, deal, outreach, distribution, offer, and transaction actions, and add missing workflow tenant-scope migration fields.
+- [x] Implement configurable comparable qualification, transparent factor scoring, median-and-MAD outlier exclusion, weighted ARV, and reason-required override audit handoff.
+- [x] Enforce the authoritative minimum-three-qualified-comparables rule before returning a weighted ARV.
+- [x] Implement deterministic, source-traceable motivation-signal detection for the explicit equity, ownership, delinquency, foreclosure, vacancy, listing, days-on-market, probate, entity, and distress rules without inventing weighted scores.
+- [x] Deliver a standalone no-Supabase runtime with live integrations intentionally disabled and all unavailable states clearly labeled.
+- [x] Remove any user-facing wording that implies Supabase is required for the no-integration preview, while retaining the approved architecture and activation notes in documentation.
+- [x] Route standalone health checks correctly through the Next.js preview and revalidate the no-integration build.
+- [x] Integrate an approved live property-data provider for source-backed property search, pagination, normalization, and provenance. RealtyAPI.io is connected; live UI requests still require authenticated workspace scope.
+- [x] Integrate the approved AI service for verified-facts-only seller outreach and research-summary drafts with required user review labels. Built-in server-side AI validation passed.
+- [x] Configure and validate required external-service credentials without exposing secrets or activating unapproved providers. RealtyAPI.io credentials and provider selector were validated securely.
+- [x] Add regression tests and update status copy after live property and AI integrations were validated.
+- [x] Verify Realtor.io’s official API, data coverage, authentication method, endpoint contract, and usage terms before implementation. Confirmed service identity is RealtyAPI.io.
+- [x] Configure the exact Realtor.io credential and endpoint variables securely after the user supplies or confirms them. Variables are stored through project configuration.
+- [x] Implement and validate the Realtor.io adapter only after its official API contract is verified. Adapter source is RealtyAPI.io.
+- [x] Honor requested RealtyAPI page-size limits and preserve visible source and last-updated provenance in live result cards.
+- [x] Add automated RealtyAPI normalization and pagination regression coverage.
+- [x] Wire the Sellers CRM AI-draft action to the guarded endpoint with loading, error, and labeled review states.
+- [x] Add automated regression coverage for the live AI-draft path using verified-facts-only context and supported model selection.
+- [x] Fix the proxied preview dev-resource origin configuration so search-page JavaScript interactions load reliably.
+- [x] Replace non-functional property-search category placeholders with selectable filters and pass supported filter values to RealtyAPI.io.
+- [x] Verify the submitted search request, loading/error states, and live provider response path in the browser and automated checks.
+- [x] Add a browser-driven search-form verification that asserts the visible authentication-required error state after submission in the standalone preview.
+- [x] Add an authenticated integration-test path or documented activation check proving a real RealtyAPI response can reach the UI once valid organization scope is enabled.
+- [x] Expose a clear in-UI authentication-required action when live search is blocked by the standalone configuration boundary.
+- [x] Add a real Playwright browser test that submits the search form and asserts the rendered authentication-required error and access-state action.
+- [x] Document the authenticated activation path and verification steps required for RealtyAPI results to reach the UI.
+- [x] Add an authenticated protected-route integration test path using controlled provider/auth fixtures without fabricating production property data.
+- [x] Add a browser UI provider-fixture check that asserts a controlled RealtyAPI-shaped result card renders source and last-updated provenance.
+- [x] Resolve the authentication-disabled preview blocker preventing live RealtyAPI property results from returning. The project now requires a real signed-in Supabase session instead of remaining disabled.
+- [x] Verify the approved authentication and organization-scope configuration required by the project before enabling live search.
+- [x] Ensure the frontend session handoff sends the approved authenticated context to the protected property-search route, or keep the fallback state explicit if configuration is unavailable.
+- [x] Validate the end-to-end authenticated property search without fabricating or exposing unscoped property data.
+- [x] Activate validated Supabase authentication configuration for the approved live-search scope.
+- [x] Implement the frontend authenticated session and organization header handoff for protected RealtyAPI search. Bearer session handoff is active; organization membership verification remains a protected backend concern.
+- [x] Validate authenticated live property search, organization membership enforcement, and fallback behavior.
+- [x] Update standalone guard tests to explicitly override Supabase validation state now that authenticated mode is activated.
+- [x] Add authenticated-mode route assertions proving missing tokens return 401 while configured search remains protected.
+- [x] Derive the approved organization identifier from the authenticated Supabase session and send it as the organization header on live property-search requests.
+- [x] Enforce organization membership on the protected property-search route and return a clear access error when the user has no approved organization.
+- [x] Add regression coverage for allowed and denied organization-scoped property search.
+- [x] Add a property-search regression test proving a missing organization header returns 400 ORGANIZATION_REQUIRED.
+- [x] Add a property-search regression test proving a non-member organization returns 403 ORGANIZATION_ACCESS_DENIED.
+- [x] Guide the user through applying the prepared PostgreSQL/Supabase migrations in the approved project in dependency order.
+- [x] Verify the migrated organization and membership schema without destructive database changes.
+- [x] Verify user organization assignment and complete authenticated live-search testing after migration.
+- [x] Fix backend verification of Supabase ES256 access tokens so valid signed-in sessions are accepted by protected search routes.
+- [x] Preserve issuer, expiry, audience, and organization-claim validation when switching from the failing remote user lookup.
+- [x] Add regression coverage for valid and invalid Supabase token verification and rerun live search.
+- [x] Add a safe Supabase JWKS configuration fallback for server environments that cannot reach the public JWKS endpoint directly.
+- [x] Validate the fallback only against the approved Supabase issuer and ES256 audience, never by trusting browser-supplied identity claims.
+- [x] Re-test the authenticated Dallas search after the approved public signing key is configured.
+- [x] Prevent Supabase browser `getSession()` locking from leaving the live search button stuck in a loading state.
+- [x] Use a same-origin persisted session fallback only as a bearer-token source, while keeping backend JWT and organization membership verification authoritative.
+- [x] Add a regression check proving the search form resolves loading and renders live results after the session handoff.
+- [x] Add backend auth regression tests that verify valid Supabase ES256 JWT acceptance and invalid issuer, audience, expiry, and signature rejection.
+- [x] Replace or supplement session retrieval with a proven non-blocking persisted-session fallback and test loading exit on session success or failure.
+- [x] Extend browser regression to assert authenticated live search exits Searching and renders result cards, or surfaces the bounded provider timeout/error state.
+- [x] Extend the browser regression to assert the unauthenticated/session-failure path exits Searching and restores the Search properties button text.
+- [x] Re-mark the non-blocking session fallback item complete only after both success and failure loading-exit assertions are covered.
+- [x] Resolve live RealtyAPI property IDs in the property-intelligence detail route instead of treating them as unresolved local records.
+- [x] Preserve provider provenance, confidence, source timestamps, and truthful UNKNOWN states for fields RealtyAPI does not provide.
+- [x] Add regression coverage for live property-detail hydration, missing provider records, and organization access boundaries.
+- [x] Extend the browser regression to open a live search result and assert the property-intelligence view renders the provider-backed address and freshness metadata.
+- [x] Update the global workspace status to distinguish signed-in provider-ready state from unauthenticated access-required state.
+
+- [x] Roll back to checkpoint 149db047 and verify the workspace authentication loop is removed and property search remains responsive.
+
+- [x] Fix property-search authentication status remaining on “Checking workspace authentication…” during search submission while preserving Supabase organization authorization.
+
+- [x] Add a direct sign-in action to the property-search access-required state and preserve the current search query for return after authentication.
+
+- [x] Add a working workspace sign-out control that calls Supabase signOut, clears the persisted browser session, and returns the user to sign-in.
+
+- [x] Fix property search submission refreshing to a blank page instead of staying on search and rendering results or a truthful error state.
+
+- [x] Stop the frontend infinite refresh or duplicate-search loop after successful property search while preserving valid auth, organization scope, and result rendering.
