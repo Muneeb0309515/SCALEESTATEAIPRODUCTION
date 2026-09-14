@@ -12,6 +12,7 @@ function getOrganizationId(session: { user?: { app_metadata?: Record<string, unk
 
 type PropertyResult = {
   provider_property_id: string;
+  provider_listing_id?: string | null;
   address: string;
   city: string;
   state: string;
