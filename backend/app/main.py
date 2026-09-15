@@ -304,7 +304,12 @@ async def property_search_preview(
         if provider_name != "realtyapi" or not isinstance(provider, RealtyApiAdapter):
             raise HTTPException(status_code=501, detail={"code": "ADAPTER_ENDPOINT_REQUIRED", "message": "The configured provider adapter is not available."})
         criteria = RealtySearchCriteria(location=location, page=page, limit=limit, min_price=min_price, max_price=max_price, min_beds=min_beds, max_beds=max_beds, min_baths=min_baths, property_type=property_type, status=status)
-        return await provider.search(criteria)
+        result = await provider.search(criteria)
+        stored_records = OrganizationRepository(scope.organization_id).upsert_properties(result.results)
+        response = result.model_dump(mode="json")
+        for result_item, stored in zip(response["results"], stored_records, strict=True):
+            result_item["organization_property_id"] = stored["id"]
+        return response
     except IntegrationUnavailable as error:
         raise HTTPException(status_code=503, detail={"code": error.code, "message": error.message}) from error
     except httpx.HTTPStatusError as error:
@@ -324,7 +329,11 @@ async def property_detail(
         provider = get_property_provider()
         if provider_name != "realtyapi" or not isinstance(provider, RealtyApiAdapter):
             raise HTTPException(status_code=501, detail={"code": "ADAPTER_ENDPOINT_REQUIRED", "message": "The configured provider adapter is not available."})
-        return await provider.details_by_address(address)
+        property_record = await provider.details_by_address(address)
+        stored = OrganizationRepository(scope.organization_id).upsert_property(property_record)
+        response = property_record.model_dump(mode="json")
+        response["organization_property_id"] = stored["id"]
+        return response
     except IntegrationUnavailable as error:
         raise HTTPException(status_code=503, detail={"code": error.code, "message": error.message}) from error
     except httpx.HTTPStatusError as error:

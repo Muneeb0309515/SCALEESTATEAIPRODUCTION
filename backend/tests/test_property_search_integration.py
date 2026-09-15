@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -55,17 +55,21 @@ class AuthenticatedPropertySearchTests(unittest.TestCase):
         provider_response = RealtySearchResult(results=[property_record], total=1, page=1, has_next_page=False, retrieved_at=datetime.now(timezone.utc))
         adapter = RealtyApiAdapter()
         adapter.search = AsyncMock(return_value=provider_response)
+        repository = MagicMock()
+        repository.upsert_properties.return_value = [{"id": "stored-property-1"}]
         scope = OrganizationScope(organization_id="org-1", user_id=identity.user_id)
         main.app.dependency_overrides[main.require_organization_scope] = lambda: scope
         try:
-            with patch.object(main, "get_settings", return_value=settings), patch.object(main, "require_property_provider", return_value="realtyapi"), patch.object(main, "get_property_provider", return_value=adapter):
+            with patch.object(main, "get_settings", return_value=settings), patch.object(main, "require_property_provider", return_value="realtyapi"), patch.object(main, "get_property_provider", return_value=adapter), patch.object(main, "OrganizationRepository", return_value=repository):
                 response = TestClient(main.app).get("/api/v1/providers/property-search", params={"location": "Austin, TX", "property_type": "single_family", "limit": 1}, headers={"X-Organization-Id": "org-1"})
         finally:
             main.app.dependency_overrides.pop(main.require_organization_scope, None)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["results"][0]["provider_property_id"], "property-1")
+        self.assertEqual(response.json()["results"][0]["organization_property_id"], "stored-property-1")
         self.assertEqual(response.json()["results"][0]["source"], "realtyapi")
+        repository.upsert_properties.assert_called_once_with([property_record])
         adapter.search.assert_awaited_once()
         self.assertEqual(adapter.search.await_args.args[0].property_type, "single_family")
         self.assertEqual(adapter.search.await_args.args[0].limit, 1)
@@ -88,17 +92,21 @@ class AuthenticatedPropertySearchTests(unittest.TestCase):
         )
         adapter = RealtyApiAdapter()
         adapter.details_by_address = AsyncMock(return_value=property_record)
+        repository = MagicMock()
+        repository.upsert_property.return_value = {"id": "stored-property-1"}
         scope = OrganizationScope(organization_id="org-1", user_id=identity.user_id)
         main.app.dependency_overrides[main.require_organization_scope] = lambda: scope
         try:
-            with patch.object(main, "require_property_provider", return_value="realtyapi"), patch.object(main, "get_property_provider", return_value=adapter):
+            with patch.object(main, "require_property_provider", return_value="realtyapi"), patch.object(main, "get_property_provider", return_value=adapter), patch.object(main, "OrganizationRepository", return_value=repository):
                 response = TestClient(main.app).get("/api/v1/providers/property-detail", params={"address": property_record.address}, headers={"X-Organization-Id": "org-1"})
         finally:
             main.app.dependency_overrides.pop(main.require_organization_scope, None)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["provider_property_id"], "property-1")
+        self.assertEqual(response.json()["organization_property_id"], "stored-property-1")
         self.assertEqual(response.json()["source"], "realtyapi")
+        repository.upsert_property.assert_called_once_with(property_record)
         adapter.details_by_address.assert_awaited_once_with(property_record.address)
 
 

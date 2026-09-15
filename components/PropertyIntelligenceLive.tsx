@@ -6,6 +6,7 @@ import { BadgeCheck, CircleAlert, FileLock2, Search, Target, UserRoundCheck } fr
 import { getPersistedSupabaseSession, getSupabaseBrowserClient } from "@/lib/supabase-browser";
 
 type ProviderProperty = {
+  organization_property_id?: string | null;
   provider_property_id: string;
   provider_listing_id?: string | null;
   address: string;
