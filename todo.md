@@ -124,3 +124,15 @@
 - [x] Fix property search submission refreshing to a blank page instead of staying on search and rendering results or a truthful error state.
 
 - [x] Stop the frontend infinite refresh or duplicate-search loop after successful property search while preserving valid auth, organization scope, and result rendering.
+
+## Buyer List Feature — approved scope update
+
+- [ ] Preserve RealtyAPI.io as the primary property-data provider.
+- [ ] Add RapidAPI Red US Real Estate Listings only as a secondary buyer-data provider.
+- [ ] Start the RapidAPI sync with an explicit 2–3 state allowlist; do not pull all 50 states yet.
+- [ ] Support the two additional RapidAPI keys through secure configuration; never hard-code or expose them.
+- [ ] Implement organization-scoped buyer, transaction, and buyer-score persistence with provenance and auditability.
+- [ ] Implement paginated sync with the specified 500-record request limit, exponential backoff (1s, 2s, 4s, 8s), three retries, and progress logging.
+- [ ] Add buyer search/filter UI, dashboard buyer breakdown, and CSV export.
+- [ ] Keep buyer score and buyer_type as pending/UNDEFINED until Muneeb provides the exact calculation formula; do not invent a scoring formula.
+- [ ] Validate that RealtyAPI-backed property search and existing deterministic deal analysis remain unchanged.
