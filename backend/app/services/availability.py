@@ -15,6 +15,20 @@ def require_project_database() -> None:
         raise IntegrationUnavailable("CONFIGURATION_REQUIRED", "Organization data is disabled in the standalone preview; production persistence requires the approved data configuration.")
 
 
+def integration_readiness() -> dict[str, str]:
+    """Return configuration status only; never include secret values or connection strings."""
+    settings = get_settings()
+    provider_configured = (
+        os.getenv("PROPERTY_DATA_PROVIDER") == "realtyapi"
+        and bool(settings.realtyapi_api_key)
+        and bool(settings.realtyapi_base_url)
+    )
+    return {
+        "realtyapi": "REALTYAPI_CONFIGURED" if provider_configured else "REALTYAPI_NOT_CONFIGURED",
+        "supabase": "SUPABASE_CONFIGURED" if settings.has_project_supabase_connection else "SUPABASE_NOT_CONFIGURED",
+    }
+
+
 def require_property_provider() -> str:
     provider = os.getenv("PROPERTY_DATA_PROVIDER")
     if provider == "realtyapi" and os.getenv("REALTYAPI_API_KEY") and os.getenv("REALTYAPI_BASE_URL"):

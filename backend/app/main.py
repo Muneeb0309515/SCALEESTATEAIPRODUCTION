@@ -8,7 +8,7 @@ from .core.config import get_settings
 from .deal_engine import AnalysisInput, calculate_analysis
 from .workflows import TransitionInput, validate_transition
 from .matching import BuyerCriteria, DealCandidate, MatchConfiguration, match_buyer
-from .services import IntegrationUnavailable, require_property_provider
+from .services import IntegrationUnavailable, integration_readiness, require_property_provider
 from .comparables import ComparableCandidate, ComparableConfiguration, analyze_comparables
 from .core.auth import AuthenticatedIdentity, require_authenticated_identity
 from .data import OrganizationRepository, OrganizationScope, require_organization_scope
@@ -35,8 +35,15 @@ class DraftRequest(BaseModel):
 
 @app.get("/health")
 async def health_check():
-    settings = get_settings()
-    return {"status": "ready", "mode": "standalone_preview", "services": {"supabase_project": "disabled_by_request", "property_data": "disabled_by_request", "document_storage": "disabled_by_request", "ai_drafts": "disabled_by_request"}}
+    readiness = integration_readiness()
+    configured = readiness == {"realtyapi": "REALTYAPI_CONFIGURED", "supabase": "SUPABASE_CONFIGURED"}
+    return {"status": "ready", "mode": "live_ready" if configured else "configuration_required", "services": readiness}
+
+
+@app.get("/api/v1/integrations/readiness")
+async def integration_readiness_check():
+    """Expose only safe configured/not-configured statuses for live-test orchestration."""
+    return integration_readiness()
 
 @app.get("/api/v1/auth/session")
 async def auth_session(identity: AuthenticatedIdentity = Depends(require_authenticated_identity)):
@@ -297,7 +304,12 @@ async def property_search_preview(
         if provider_name != "realtyapi" or not isinstance(provider, RealtyApiAdapter):
             raise HTTPException(status_code=501, detail={"code": "ADAPTER_ENDPOINT_REQUIRED", "message": "The configured provider adapter is not available."})
         criteria = RealtySearchCriteria(location=location, page=page, limit=limit, min_price=min_price, max_price=max_price, min_beds=min_beds, max_beds=max_beds, min_baths=min_baths, property_type=property_type, status=status)
-        return await provider.search(criteria)
+        result = await provider.search(criteria)
+        stored_records = OrganizationRepository(scope.organization_id).upsert_properties(result.results)
+        response = result.model_dump(mode="json")
+        for result_item, stored in zip(response["results"], stored_records, strict=True):
+            result_item["organization_property_id"] = stored["id"]
+        return response
     except IntegrationUnavailable as error:
         raise HTTPException(status_code=503, detail={"code": error.code, "message": error.message}) from error
     except httpx.HTTPStatusError as error:
@@ -317,7 +329,11 @@ async def property_detail(
         provider = get_property_provider()
         if provider_name != "realtyapi" or not isinstance(provider, RealtyApiAdapter):
             raise HTTPException(status_code=501, detail={"code": "ADAPTER_ENDPOINT_REQUIRED", "message": "The configured provider adapter is not available."})
-        return await provider.details_by_address(address)
+        property_record = await provider.details_by_address(address)
+        stored = OrganizationRepository(scope.organization_id).upsert_property(property_record)
+        response = property_record.model_dump(mode="json")
+        response["organization_property_id"] = stored["id"]
+        return response
     except IntegrationUnavailable as error:
         raise HTTPException(status_code=503, detail={"code": error.code, "message": error.message}) from error
     except httpx.HTTPStatusError as error:

@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 
 const port = process.env.PORT || "3000";
-const api = spawn("python3", ["-m", "uvicorn", "backend.app.main:app", "--host", "127.0.0.1", "--port", "8000"], { stdio: ["ignore", "ignore", "pipe"] });
+const pythonBin = process.env.PYTHON_BIN || "python3";
+const api = spawn(pythonBin, ["-m", "uvicorn", "backend.app.main:app", "--host", "127.0.0.1", "--port", "8000"], { stdio: ["ignore", "ignore", "pipe"] });
 api.stderr.on("data", (buffer) => {
   const output = String(buffer);
   if (!output.includes("Uvicorn running on")) process.stderr.write(`[api] ${output}`);

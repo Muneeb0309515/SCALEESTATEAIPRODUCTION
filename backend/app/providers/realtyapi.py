@@ -59,7 +59,11 @@ class RealtyApiAdapter:
             response = await client.get(f"{self.base_url}/search/bylocation", params=params, headers=self._headers())
             response.raise_for_status()
             payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("RealtyAPI search response must be an object")
         raw_results = payload.get("searchResults", [])
+        if not isinstance(raw_results, list):
+            raise ValueError("RealtyAPI searchResults must be a list")
         normalized_records = [record for item in raw_results if (record := self._normalize(item)) is not None]
         records = normalized_records[: criteria.limit]
         has_more_records = len(normalized_records) > criteria.limit
@@ -72,6 +76,8 @@ class RealtyApiAdapter:
             response = await client.get(f"{self.base_url}/details/byaddress", params={"address": address}, headers=self._headers())
             response.raise_for_status()
             payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("RealtyAPI detail response must be an object")
         record = self._normalize(payload.get("detail", {}))
         if record is None:
             raise ValueError("RealtyAPI response did not contain a normalizable property detail")
@@ -89,13 +95,21 @@ class RealtyApiAdapter:
         except (TypeError, ValueError):
             baths = None
         photos = item.get("photos") or []
+        normalized_photos = [photo for photo in photos if isinstance(photo, str) and photo]
+        if not normalized_photos:
+            normalized_photos = [
+                photo.get("href") or photo.get("url")
+                for photo in photos
+                if isinstance(photo, dict) and (photo.get("href") or photo.get("url"))
+            ]
         return CanonicalProperty(
             provider_property_id=str(item.get("property_id") or item.get("listing_id") or ""),
+            provider_listing_id=str(item.get("listing_id")) if item.get("listing_id") else None,
             address=f"{address['line']}, {address['city']}, {address['state_code']} {address['postal_code']}",
             city=str(address["city"]), state=str(address["state_code"]), zip_code=str(address["postal_code"]),
             latitude=address.get("latitude"), longitude=address.get("longitude"),
             property_type=str(item.get("property_type") or details.get("type") or "UNKNOWN"),
-            list_price=item.get("list_price"), listing_url=item.get("href"), primary_photo=item.get("primary_photo"),
+            list_price=item.get("list_price"), listing_url=item.get("href"), primary_photo=item.get("primary_photo"), photos=normalized_photos,
             beds=details.get("beds", item.get("beds")), baths=baths, living_area=details.get("sqft", item.get("sqft")),
             lot_size=details.get("lot_sqft", item.get("lot_sqft")), year_built=details.get("year_built"),
             estimated_market_value=None, estimated_market_value_confidence=None,
