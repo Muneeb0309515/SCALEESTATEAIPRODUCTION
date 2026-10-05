@@ -11,7 +11,7 @@ from .matching import BuyerCriteria, DealCandidate, MatchConfiguration, match_bu
 from .services import IntegrationUnavailable, integration_readiness, require_property_provider
 from .comparables import ComparableCandidate, ComparableConfiguration, analyze_comparables
 from .core.auth import AuthenticatedIdentity, require_authenticated_identity
-from .data import OrganizationRepository, OrganizationScope, require_organization_scope
+from .data import OrganizationRepository, OrganizationScope, PropertyPersistenceError, canonical_property_response, require_organization_scope
 from .data.models import BuyerCreate, DealCreate, SavedSearchCreate, SellerCreate, TaskCreate
 from .data.workflow_models import BuyerCriteriaUpdate, BuyerOfferCreate, ClosingRecord, DistributionCreate, DistributionResponse, FollowUpCreate, OutreachCreate, TransactionCreate
 from .scoring import ClassificationConfiguration, WeightedScoreConfiguration, WeightedScoreInput, calculate_final_classification, calculate_weighted_score
@@ -51,7 +51,8 @@ async def auth_session(identity: AuthenticatedIdentity = Depends(require_authent
 
 @app.get("/api/v1/properties")
 async def list_properties(scope: OrganizationScope = Depends(require_organization_scope)):
-    return OrganizationRepository(scope.organization_id).list("properties", "updated_at")
+    records = OrganizationRepository(scope.organization_id).list("properties", "updated_at")
+    return [canonical_property_response(record) for record in records]
 
 @app.get("/api/v1/saved-searches")
 async def list_saved_searches(scope: OrganizationScope = Depends(require_organization_scope)):
@@ -69,7 +70,7 @@ async def get_property(property_id: str, scope: OrganizationScope = Depends(requ
     record = OrganizationRepository(scope.organization_id).get("properties", property_id)
     if not record:
         raise HTTPException(status_code=404, detail={"code": "PROPERTY_NOT_FOUND", "message": "No property was found in this organization."})
-    return record
+    return canonical_property_response(record)
 
 @app.get("/api/v1/properties/{property_id}/sales-history")
 async def get_sales_history(property_id: str, scope: OrganizationScope = Depends(require_organization_scope)):
@@ -312,6 +313,8 @@ async def property_search_preview(
         return response
     except IntegrationUnavailable as error:
         raise HTTPException(status_code=503, detail={"code": error.code, "message": error.message}) from error
+    except PropertyPersistenceError as error:
+        raise HTTPException(status_code=409 if error.code == "PROPERTY_PERSISTENCE_CONFLICT" else 503, detail={"code": error.code, "message": error.message}) from error
     except httpx.HTTPStatusError as error:
         status_code = error.response.status_code
         raise HTTPException(status_code=502, detail={"code": "PROPERTY_PROVIDER_ERROR", "message": "RealtyAPI.io did not return a successful property-search response."}) from error
@@ -336,6 +339,8 @@ async def property_detail(
         return response
     except IntegrationUnavailable as error:
         raise HTTPException(status_code=503, detail={"code": error.code, "message": error.message}) from error
+    except PropertyPersistenceError as error:
+        raise HTTPException(status_code=409 if error.code == "PROPERTY_PERSISTENCE_CONFLICT" else 503, detail={"code": error.code, "message": error.message}) from error
     except httpx.HTTPStatusError as error:
         raise HTTPException(status_code=502, detail={"code": "PROPERTY_PROVIDER_ERROR", "message": "RealtyAPI.io did not return a successful property-detail response."}) from error
     except (httpx.HTTPError, ValueError) as error:

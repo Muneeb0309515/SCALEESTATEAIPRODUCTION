@@ -1,5 +1,4 @@
 import unittest
-from datetime import datetime, timezone
 
 from backend.app.providers.realtyapi import RealtyApiAdapter
 
@@ -19,7 +18,8 @@ class RealtyApiIdentityAndPhotoTests(unittest.TestCase):
         self.assertEqual(normalized.provider_listing_id, "listing-1")
         self.assertEqual(normalized.photos, ["https://example.test/one.jpg", "https://example.test/two.jpg"])
         self.assertEqual(normalized.source, "realtyapi")
-        self.assertIsInstance(normalized.data_updated_at, datetime)
+        self.assertIsNone(normalized.data_updated_at)
+        self.assertIsNone(normalized.source_retrieved_at)
 
     def test_normalization_accepts_photo_objects_and_keeps_missing_values_unknown(self):
         record = {

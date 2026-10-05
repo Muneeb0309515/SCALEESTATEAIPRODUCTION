@@ -109,6 +109,40 @@ class AuthenticatedPropertySearchTests(unittest.TestCase):
         repository.upsert_property.assert_called_once_with(property_record)
         adapter.details_by_address.assert_awaited_once_with(property_record.address)
 
+    def test_persisted_property_list_returns_canonical_contract(self):
+        scope = OrganizationScope(organization_id="org-1", user_id="user-1")
+        repository = MagicMock()
+        repository.list.return_value = [{"id": "stored-property-1", "organization_id": "org-1", "address": "123 Main St", "city": "Austin", "state": "TX", "zip": "78744", "property_type": None, "source": "realtyapi", "provenance": {"address": {"classification": "SOURCE_DATA"}}, "photos": [], "data_updated_at": None, "source_retrieved_at": "2026-10-04T00:00:00Z", "last_seen_at": "2026-10-04T00:00:00Z"}]
+        main.app.dependency_overrides[main.require_organization_scope] = lambda: scope
+        try:
+            with patch.object(main, "OrganizationRepository", return_value=repository):
+                response = TestClient(main.app).get("/api/v1/properties", headers={"X-Organization-Id": "org-1"})
+        finally:
+            main.app.dependency_overrides.pop(main.require_organization_scope, None)
+        self.assertEqual(response.status_code, 200)
+        body = response.json()[0]
+        self.assertEqual(body["organization_property_id"], "stored-property-1")
+        self.assertEqual(body["zip_code"], "78744")
+        self.assertNotIn("zip", body)
+        self.assertEqual(body["property_type"], "UNKNOWN")
+        self.assertIsNone(body["data_updated_at"])
+        self.assertIn("provenance", body)
+
+    def test_persisted_property_detail_is_organization_scoped_canonical_contract(self):
+        scope = OrganizationScope(organization_id="org-1", user_id="user-1")
+        repository = MagicMock()
+        repository.get.return_value = {"id": "stored-property-1", "organization_id": "org-1", "address": "123 Main St", "city": "Austin", "state": "TX", "zip": "78744", "property_type": "single_family", "source": "realtyapi", "provenance": {}, "photos": []}
+        main.app.dependency_overrides[main.require_organization_scope] = lambda: scope
+        try:
+            with patch.object(main, "OrganizationRepository", return_value=repository):
+                response = TestClient(main.app).get("/api/v1/properties/stored-property-1", headers={"X-Organization-Id": "org-1"})
+        finally:
+            main.app.dependency_overrides.pop(main.require_organization_scope, None)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["organization_property_id"], "stored-property-1")
+        self.assertEqual(response.json()["zip_code"], "78744")
+        repository.get.assert_called_once_with("properties", "stored-property-1")
+
 
 if __name__ == "__main__":
     unittest.main()

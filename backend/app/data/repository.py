@@ -11,6 +11,15 @@ from ..providers.base import CanonicalProperty
 from ..services.availability import require_project_database
 
 
+class PropertyPersistenceError(RuntimeError):
+    """Safe, actionable persistence failure without leaking database internals."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
 class OrganizationRepository:
     def __init__(self, organization_id: str):
         require_project_database()
@@ -46,44 +55,51 @@ class OrganizationRepository:
         if not property_record.provider_property_id:
             raise ValueError("A provider property identifier is required for durable persistence")
 
-        retrieved_at = property_record.data_updated_at.astimezone(timezone.utc).isoformat()
+        retrieved_at = (property_record.source_retrieved_at or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+        provider_updated_at = property_record.data_updated_at.astimezone(timezone.utc).isoformat() if property_record.data_updated_at else None
         source_values = self._property_values(property_record)
-        lookup = (
-            self.client.table("properties")
-            .select("*")
-            .eq("organization_id", self.organization_id)
-            .eq("source", property_record.source)
-            .eq("provider_property_id", property_record.provider_property_id)
-            .limit(1)
-            .execute()
-        )
-        existing = lookup.data[0] if lookup.data else None
-        provenance = self._provenance(property_record, retrieved_at)
-        metadata = {
-            "source_retrieved_at": retrieved_at,
-            "data_updated_at": retrieved_at,
-            "last_seen_at": retrieved_at,
-            "provenance": provenance,
-        }
-
-        if existing:
-            # Do not erase a previously known provider value merely because the latest
-            # response is sparse. Explicit provider values remain source-backed.
-            updates = {key: value for key, value in source_values.items() if self._has_value(value)}
-            updates.update(metadata)
-            response = (
+        try:
+            lookup = (
                 self.client.table("properties")
-                .update(updates)
+                .select("*")
                 .eq("organization_id", self.organization_id)
-                .eq("id", existing["id"])
+                .eq("source", property_record.source)
+                .eq("provider_property_id", property_record.provider_property_id)
+                .limit(1)
                 .execute()
             )
-            record = response.data[0] if response.data else {**existing, **updates}
-        else:
-            record = self.create("properties", {**source_values, **metadata})
+            existing = lookup.data[0] if lookup.data else None
+            provenance = self._provenance(property_record, retrieved_at)
+            metadata = {
+                "source_retrieved_at": retrieved_at,
+                "data_updated_at": provider_updated_at,
+                "last_seen_at": retrieved_at,
+                "provenance": provenance,
+            }
 
-        self._persist_property_fields(record["id"], property_record, retrieved_at)
-        return record
+            if existing:
+                updates = {key: value for key, value in source_values.items() if self._has_value(value)}
+                updates.update(metadata)
+                response = (
+                    self.client.table("properties")
+                    .update(updates)
+                    .eq("organization_id", self.organization_id)
+                    .eq("id", existing["id"])
+                    .execute()
+                )
+                record = response.data[0] if response.data else {**existing, **updates}
+            else:
+                record = self.create("properties", {**source_values, **metadata})
+
+            self._persist_property_fields(record["id"], property_record, retrieved_at)
+            return record
+        except PropertyPersistenceError:
+            raise
+        except Exception as error:
+            detail = str(error).lower()
+            if "unique" in detail or "duplicate" in detail:
+                raise PropertyPersistenceError("PROPERTY_PERSISTENCE_CONFLICT", "The property already exists or conflicts with an existing property field.") from error
+            raise PropertyPersistenceError("PROPERTY_PERSISTENCE_FAILED", "The property could not be persisted to the organization workspace.") from error
 
     def upsert_properties(self, property_records: list[CanonicalProperty]) -> list[dict[str, Any]]:
         return [self.upsert_property(property_record) for property_record in property_records]

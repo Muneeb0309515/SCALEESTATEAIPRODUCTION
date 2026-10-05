@@ -64,10 +64,15 @@ class RealtyApiAdapter:
         raw_results = payload.get("searchResults", [])
         if not isinstance(raw_results, list):
             raise ValueError("RealtyAPI searchResults must be a list")
-        normalized_records = [record for item in raw_results if (record := self._normalize(item)) is not None]
+        retrieved_at = datetime.now(timezone.utc)
+        normalized_records = []
+        for item in raw_results:
+            record = self._normalize(item)
+            if record is not None:
+                normalized_records.append(record.model_copy(update={"source_retrieved_at": retrieved_at}))
         records = normalized_records[: criteria.limit]
         has_more_records = len(normalized_records) > criteria.limit
-        return RealtySearchResult(results=records, total=int(payload.get("total", len(normalized_records))), page=criteria.page, has_next_page=bool(payload.get("nextPage", False)) or has_more_records, retrieved_at=datetime.now(timezone.utc))
+        return RealtySearchResult(results=records, total=int(payload.get("total", len(normalized_records))), page=criteria.page, has_next_page=bool(payload.get("nextPage", False)) or has_more_records, retrieved_at=retrieved_at)
 
     async def details_by_address(self, address: str) -> CanonicalProperty:
         if not self.configured:
@@ -78,10 +83,11 @@ class RealtyApiAdapter:
             payload = response.json()
         if not isinstance(payload, dict):
             raise ValueError("RealtyAPI detail response must be an object")
+        retrieved_at = datetime.now(timezone.utc)
         record = self._normalize(payload.get("detail", {}))
         if record is None:
             raise ValueError("RealtyAPI response did not contain a normalizable property detail")
-        return record
+        return record.model_copy(update={"source_retrieved_at": retrieved_at})
 
     @staticmethod
     def _normalize(item: dict[str, Any]) -> CanonicalProperty | None:
@@ -102,8 +108,11 @@ class RealtyApiAdapter:
                 for photo in photos
                 if isinstance(photo, dict) and (photo.get("href") or photo.get("url"))
             ]
+        provider_id = item.get("property_id") or item.get("listing_id")
+        if provider_id is None or str(provider_id).strip() == "":
+            raise ValueError("RealtyAPI property record is missing property_id and listing_id")
         return CanonicalProperty(
-            provider_property_id=str(item.get("property_id") or item.get("listing_id") or ""),
+            provider_property_id=str(provider_id),
             provider_listing_id=str(item.get("listing_id")) if item.get("listing_id") else None,
             address=f"{address['line']}, {address['city']}, {address['state_code']} {address['postal_code']}",
             city=str(address["city"]), state=str(address["state_code"]), zip_code=str(address["postal_code"]),
@@ -114,5 +123,8 @@ class RealtyApiAdapter:
             lot_size=details.get("lot_sqft", item.get("lot_sqft")), year_built=details.get("year_built"),
             estimated_market_value=None, estimated_market_value_confidence=None,
             listing_status=item.get("status"), days_on_market=item.get("days_on_market"),
-            source="realtyapi", data_updated_at=datetime.now(timezone.utc),
+            source="realtyapi",
+            # RealtyAPI's verified provider update field is not part of the
+            # validated contract; keep it UNKNOWN instead of inferring it.
+            data_updated_at=None,
         )

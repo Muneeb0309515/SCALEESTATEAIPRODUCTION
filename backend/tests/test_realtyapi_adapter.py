@@ -59,7 +59,8 @@ class RealtyApiAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.total, 37)
         self.assertTrue(result.has_next_page)
         self.assertEqual(result.results[0].source, "realtyapi")
-        self.assertIsNotNone(result.results[0].data_updated_at)
+        self.assertIsNone(result.results[0].data_updated_at)
+        self.assertIsNotNone(result.results[0].source_retrieved_at)
         self.assertEqual(result.results[0].provider_property_id, "prop-0")
 
 
