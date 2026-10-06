@@ -22,10 +22,15 @@ describe("approved SCALEESTATE architecture", () => {
   });
   it("guards search resume and duplicate submissions", () => {
     const search = readFileSync("components/LivePropertySearch.tsx", "utf8");
+    const styles = readFileSync("app/globals.css", "utf8");
     expect(search).toContain("searchRequestInFlight");
     expect(search).toContain("event?.stopPropagation()");
     expect(search).toContain('role="search"');
     expect(search).toContain('type="button" onClick={() => void submit(undefined, 1)}');
+    expect(search).toContain("PropertyResultsSkeleton");
+    expect(search).toContain("Loading results…");
+    expect(styles).toContain("search-shimmer");
+    expect(styles).toContain("prefers-reduced-motion:reduce");
     expect(search).toContain('params.delete("resume")');
     expect(search).toContain("window.history.replaceState");
   });
