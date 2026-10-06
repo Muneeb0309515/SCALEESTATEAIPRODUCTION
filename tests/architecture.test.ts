@@ -24,6 +24,8 @@ describe("approved SCALEESTATE architecture", () => {
     const search = readFileSync("components/LivePropertySearch.tsx", "utf8");
     expect(search).toContain("searchRequestInFlight");
     expect(search).toContain("event?.stopPropagation()");
+    expect(search).toContain('role="search"');
+    expect(search).toContain('type="button" onClick={() => void submit(undefined, 1)}');
     expect(search).toContain('params.delete("resume")');
     expect(search).toContain("window.history.replaceState");
   });
