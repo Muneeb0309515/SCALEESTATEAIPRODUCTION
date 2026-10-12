@@ -11,6 +11,14 @@ describe("approved SCALEESTATE architecture", () => {
     expect(source).toContain("Do not calculate financial metrics");
     expect(source).toContain("user-reviewable draft");
   });
+  it("keeps the public homepage connected to authenticated property search", () => {
+    const homepage = readFileSync("app/page.tsx", "utf8");
+    const landingPage = readFileSync("components/ScaleestateLandingPage.tsx", "utf8");
+    expect(homepage).toContain("ScaleestateLandingPage");
+    expect(landingPage).toContain("<LivePropertySearch />");
+    expect(landingPage).toContain("authenticated backend");
+    expect(existsSync("public/images/scaleestate-hero.webp")).toBe(true);
+  });
   it("keeps property search filters functional through the preview proxy", () => {
     const search = readFileSync("components/LivePropertySearch.tsx", "utf8");
     const nextConfig = readFileSync("next.config.ts", "utf8");
