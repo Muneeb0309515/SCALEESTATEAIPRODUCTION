@@ -59,11 +59,20 @@ class RealtyApiAdapter:
             response = await client.get(f"{self.base_url}/search/bylocation", params=params, headers=self._headers())
             response.raise_for_status()
             payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("RealtyAPI search response must be an object")
         raw_results = payload.get("searchResults", [])
-        normalized_records = [record for item in raw_results if (record := self._normalize(item)) is not None]
+        if not isinstance(raw_results, list):
+            raise ValueError("RealtyAPI searchResults must be a list")
+        retrieved_at = datetime.now(timezone.utc)
+        normalized_records = []
+        for item in raw_results:
+            record = self._normalize(item)
+            if record is not None:
+                normalized_records.append(record.model_copy(update={"source_retrieved_at": retrieved_at}))
         records = normalized_records[: criteria.limit]
         has_more_records = len(normalized_records) > criteria.limit
-        return RealtySearchResult(results=records, total=int(payload.get("total", len(normalized_records))), page=criteria.page, has_next_page=bool(payload.get("nextPage", False)) or has_more_records, retrieved_at=datetime.now(timezone.utc))
+        return RealtySearchResult(results=records, total=int(payload.get("total", len(normalized_records))), page=criteria.page, has_next_page=bool(payload.get("nextPage", False)) or has_more_records, retrieved_at=retrieved_at)
 
     async def details_by_address(self, address: str) -> CanonicalProperty:
         if not self.configured:
@@ -72,33 +81,56 @@ class RealtyApiAdapter:
             response = await client.get(f"{self.base_url}/details/byaddress", params={"address": address}, headers=self._headers())
             response.raise_for_status()
             payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("RealtyAPI detail response must be an object")
+        retrieved_at = datetime.now(timezone.utc)
         record = self._normalize(payload.get("detail", {}))
         if record is None:
             raise ValueError("RealtyAPI response did not contain a normalizable property detail")
-        return record
+        return record.model_copy(update={"source_retrieved_at": retrieved_at})
 
     @staticmethod
-    def _normalize(item: dict[str, Any]) -> CanonicalProperty | None:
+    def _normalize(item: Any) -> CanonicalProperty | None:
+        if not isinstance(item, dict):
+            return None
         address = item.get("address") or {}
+        if not isinstance(address, dict):
+            return None
         if not address.get("line") or not address.get("city") or not address.get("state_code") or not address.get("postal_code"):
             return None
         details = item.get("details") or {}
+        if not isinstance(details, dict):
+            details = {}
         baths_raw = details.get("baths")
         try:
             baths = float(baths_raw) if baths_raw is not None else None
         except (TypeError, ValueError):
             baths = None
         photos = item.get("photos") or []
+        if not isinstance(photos, list):
+            photos = []
+        normalized_photos = []
+        for photo in photos:
+            if isinstance(photo, str) and photo:
+                normalized_photos.append(photo)
+            elif isinstance(photo, dict):
+                photo_url = photo.get("href") or photo.get("url")
+                if isinstance(photo_url, str) and photo_url:
+                    normalized_photos.append(photo_url)
+        provider_id = item.get("property_id") or item.get("listing_id")
+        if provider_id is None or str(provider_id).strip() == "":
+            raise ValueError("RealtyAPI property record is missing property_id and listing_id")
         return CanonicalProperty(
-            provider_property_id=str(item.get("property_id") or item.get("listing_id") or ""),
+            provider_property_id=str(provider_id),
+            provider_listing_id=str(item.get("listing_id")) if item.get("listing_id") else None,
             address=f"{address['line']}, {address['city']}, {address['state_code']} {address['postal_code']}",
             city=str(address["city"]), state=str(address["state_code"]), zip_code=str(address["postal_code"]),
             latitude=address.get("latitude"), longitude=address.get("longitude"),
             property_type=str(item.get("property_type") or details.get("type") or "UNKNOWN"),
-            list_price=item.get("list_price"), listing_url=item.get("href"), primary_photo=item.get("primary_photo"),
+            list_price=item.get("list_price"), listing_url=item.get("href"), primary_photo=item.get("primary_photo"), photos=normalized_photos,
             beds=details.get("beds", item.get("beds")), baths=baths, living_area=details.get("sqft", item.get("sqft")),
             lot_size=details.get("lot_sqft", item.get("lot_sqft")), year_built=details.get("year_built"),
             estimated_market_value=None, estimated_market_value_confidence=None,
             listing_status=item.get("status"), days_on_market=item.get("days_on_market"),
-            source="realtyapi", data_updated_at=datetime.now(timezone.utc),
+            source="realtyapi", data_updated_at=None,
         )

@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -11,6 +11,28 @@ from backend.app.core.auth import AuthenticatedIdentity
 from backend.app.data import OrganizationScope
 from backend.app.providers.base import CanonicalProperty
 from backend.app.providers.realtyapi import RealtyApiAdapter, RealtySearchResult
+
+
+def persisted_row(property_record, record_id="stored-property-1"):
+    return {
+        "id": record_id,
+        "provider_property_id": property_record.provider_property_id,
+        "provider_listing_id": property_record.provider_listing_id,
+        "address": property_record.address,
+        "city": property_record.city,
+        "state": property_record.state,
+        "zip": property_record.zip_code,
+        "property_type": property_record.property_type,
+        "list_price": property_record.list_price,
+        "beds": property_record.beds,
+        "baths": property_record.baths,
+        "living_area": property_record.living_area,
+        "source": property_record.source,
+        "data_updated_at": property_record.data_updated_at.isoformat() if property_record.data_updated_at else None,
+        "source_retrieved_at": property_record.source_retrieved_at.isoformat() if property_record.source_retrieved_at else None,
+        "photos": property_record.photos,
+        "provenance": {},
+    }
 
 
 class AuthenticatedPropertySearchTests(unittest.TestCase):
@@ -55,17 +77,21 @@ class AuthenticatedPropertySearchTests(unittest.TestCase):
         provider_response = RealtySearchResult(results=[property_record], total=1, page=1, has_next_page=False, retrieved_at=datetime.now(timezone.utc))
         adapter = RealtyApiAdapter()
         adapter.search = AsyncMock(return_value=provider_response)
+        repository = MagicMock()
+        repository.upsert_properties.return_value = [persisted_row(property_record)]
         scope = OrganizationScope(organization_id="org-1", user_id=identity.user_id)
         main.app.dependency_overrides[main.require_organization_scope] = lambda: scope
         try:
-            with patch.object(main, "get_settings", return_value=settings), patch.object(main, "require_property_provider", return_value="realtyapi"), patch.object(main, "get_property_provider", return_value=adapter):
+            with patch.object(main, "get_settings", return_value=settings), patch.object(main, "require_property_provider", return_value="realtyapi"), patch.object(main, "get_property_provider", return_value=adapter), patch.object(main, "OrganizationRepository", return_value=repository):
                 response = TestClient(main.app).get("/api/v1/providers/property-search", params={"location": "Austin, TX", "property_type": "single_family", "limit": 1}, headers={"X-Organization-Id": "org-1"})
         finally:
             main.app.dependency_overrides.pop(main.require_organization_scope, None)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["results"][0]["provider_property_id"], "property-1")
+        self.assertEqual(response.json()["results"][0]["organization_property_id"], "stored-property-1")
         self.assertEqual(response.json()["results"][0]["source"], "realtyapi")
+        repository.upsert_properties.assert_called_once_with([property_record])
         adapter.search.assert_awaited_once()
         self.assertEqual(adapter.search.await_args.args[0].property_type, "single_family")
         self.assertEqual(adapter.search.await_args.args[0].limit, 1)
@@ -88,18 +114,38 @@ class AuthenticatedPropertySearchTests(unittest.TestCase):
         )
         adapter = RealtyApiAdapter()
         adapter.details_by_address = AsyncMock(return_value=property_record)
+        repository = MagicMock()
+        repository.upsert_property.return_value = persisted_row(property_record)
         scope = OrganizationScope(organization_id="org-1", user_id=identity.user_id)
         main.app.dependency_overrides[main.require_organization_scope] = lambda: scope
         try:
-            with patch.object(main, "require_property_provider", return_value="realtyapi"), patch.object(main, "get_property_provider", return_value=adapter):
+            with patch.object(main, "require_property_provider", return_value="realtyapi"), patch.object(main, "get_property_provider", return_value=adapter), patch.object(main, "OrganizationRepository", return_value=repository):
                 response = TestClient(main.app).get("/api/v1/providers/property-detail", params={"address": property_record.address}, headers={"X-Organization-Id": "org-1"})
         finally:
             main.app.dependency_overrides.pop(main.require_organization_scope, None)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["provider_property_id"], "property-1")
+        self.assertEqual(response.json()["organization_property_id"], "stored-property-1")
         self.assertEqual(response.json()["source"], "realtyapi")
+        repository.upsert_property.assert_called_once_with(property_record)
         adapter.details_by_address.assert_awaited_once_with(property_record.address)
+
+    def test_persisted_property_list_returns_canonical_contract(self):
+        scope = OrganizationScope(organization_id="org-1", user_id="user-1")
+        repository = MagicMock()
+        repository.list.return_value = [{"id": "stored-property-1", "organization_id": "org-1", "address": "123 Main St", "city": "Austin", "state": "TX", "zip": "78744", "property_type": None, "source": "realtyapi", "provenance": {"list_price": {"classification": "UNKNOWN"}}, "photos": [], "data_updated_at": None, "source_retrieved_at": "2026-10-04T00:00:00Z", "last_seen_at": "2026-10-04T00:00:00Z"}]
+        main.app.dependency_overrides[main.require_organization_scope] = lambda: scope
+        try:
+            with patch.object(main, "OrganizationRepository", return_value=repository):
+                response = TestClient(main.app).get("/api/v1/properties", headers={"X-Organization-Id": "org-1"})
+        finally:
+            main.app.dependency_overrides.pop(main.require_organization_scope, None)
+        self.assertEqual(response.status_code, 200)
+        body = response.json()[0]
+        self.assertEqual(body["organization_property_id"], "stored-property-1")
+        self.assertEqual(body["zip_code"], "78744")
+        self.assertNotIn("zip", body)
 
 
 if __name__ == "__main__":

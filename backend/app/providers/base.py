@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 class CanonicalProperty(BaseModel):
     """Normalized immutable property view with data origin retained per provider record."""
     provider_property_id: str
+    provider_listing_id: str | None = None
     address: str
     city: str
     state: str
@@ -17,6 +18,7 @@ class CanonicalProperty(BaseModel):
     list_price: float | None = None
     listing_url: str | None = None
     primary_photo: str | None = None
+    photos: list[str] = Field(default_factory=list)
     beds: int | None = None
     baths: float | None = None
     living_area: int | None = None
@@ -27,7 +29,8 @@ class CanonicalProperty(BaseModel):
     listing_status: str | None = None
     days_on_market: int | None = Field(default=None, ge=0)
     source: Literal["rapidapi", "batchdata", "realtyapi"]
-    data_updated_at: datetime
+    data_updated_at: datetime | None = None
+    source_retrieved_at: datetime | None = None
 
 
 class PropertySearchProvider(ABC):

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./search-loading.css";
+import "./research.css";
 
 export const metadata: Metadata = { title: "SCALEESTATE AI", description: "A disciplined operating system for real-estate wholesale investment workflows." };
 

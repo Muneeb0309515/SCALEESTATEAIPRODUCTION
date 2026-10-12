@@ -1,8 +1,23 @@
 """Organization-scoped production data access. Every query carries the organization id."""
+from __future__ import annotations
+
+from datetime import datetime, timezone
 from typing import Any
+
 from supabase import create_client
+
 from ..core.config import get_settings
+from ..providers.base import CanonicalProperty
 from ..services.availability import require_project_database
+
+
+class PropertyPersistenceError(RuntimeError):
+    """Safe, actionable persistence failure without leaking database internals."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
 
 
 class OrganizationRepository:
@@ -29,6 +44,146 @@ class OrganizationRepository:
     def create(self, table: str, values: dict[str, Any]) -> dict[str, Any]:
         response = self.client.table(table).insert({**values, "organization_id": self.organization_id}).execute()
         return response.data[0]
+
+    def upsert_property(self, property_record: CanonicalProperty) -> dict[str, Any]:
+        """Persist a provider-backed property in this organization only."""
+        if not property_record.provider_property_id:
+            raise ValueError("A provider property identifier is required for durable persistence")
+
+        retrieved_at = property_record.source_retrieved_at or datetime.now(timezone.utc)
+        if retrieved_at.tzinfo is None:
+            retrieved_at = retrieved_at.replace(tzinfo=timezone.utc)
+        retrieved_at_text = retrieved_at.astimezone(timezone.utc).isoformat()
+        provider_updated_at = property_record.data_updated_at
+        if provider_updated_at is not None:
+            if provider_updated_at.tzinfo is None:
+                provider_updated_at = provider_updated_at.replace(tzinfo=timezone.utc)
+            provider_updated_at_text = provider_updated_at.astimezone(timezone.utc).isoformat()
+        else:
+            provider_updated_at_text = None
+
+        source_values = self._property_values(property_record)
+        try:
+            lookup = (
+                self.client.table("properties")
+                .select("*")
+                .eq("organization_id", self.organization_id)
+                .eq("source", property_record.source)
+                .eq("provider_property_id", property_record.provider_property_id)
+                .limit(1)
+                .execute()
+            )
+            existing = lookup.data[0] if lookup.data else None
+            provenance = self._provenance(property_record, retrieved_at_text, (existing or {}).get("provenance") or {})
+            metadata: dict[str, Any] = {
+                "source_retrieved_at": retrieved_at_text,
+                "last_seen_at": retrieved_at_text,
+                "provenance": provenance,
+            }
+            if provider_updated_at_text is not None:
+                metadata["data_updated_at"] = provider_updated_at_text
+
+            if existing:
+                updates = {key: value for key, value in source_values.items() if self._has_value(value)}
+                updates.update(metadata)
+                response = (
+                    self.client.table("properties")
+                    .update(updates)
+                    .eq("organization_id", self.organization_id)
+                    .eq("id", existing["id"])
+                    .execute()
+                )
+                record = response.data[0] if response.data else {**existing, **updates}
+            else:
+                record = self.create("properties", {**source_values, **metadata})
+
+            self._persist_property_fields(record["id"], property_record, retrieved_at_text)
+            return record
+        except PropertyPersistenceError:
+            raise
+        except Exception as error:
+            detail = str(error).lower()
+            if "unique" in detail or "duplicate" in detail:
+                raise PropertyPersistenceError("PROPERTY_PERSISTENCE_CONFLICT", "The property already exists or conflicts with an existing property field.") from error
+            raise PropertyPersistenceError("PROPERTY_PERSISTENCE_FAILED", "The property could not be persisted to the organization workspace.") from error
+
+    def upsert_properties(self, property_records: list[CanonicalProperty]) -> list[dict[str, Any]]:
+        return [self.upsert_property(property_record) for property_record in property_records]
+
+    def _persist_property_fields(self, property_id: str, property_record: CanonicalProperty, retrieved_at: str) -> None:
+        existing_fields = (
+            self.client.table("property_fields")
+            .select("*")
+            .eq("organization_id", self.organization_id)
+            .eq("property_id", property_id)
+            .execute()
+            .data
+        )
+        existing_by_name = {field["field_name"]: field for field in existing_fields}
+        fields_to_upsert = []
+        for field_name, value in self._property_values(property_record).items():
+            if field_name in existing_by_name and not self._has_value(value):
+                continue
+            field_values = {
+                "organization_id": self.organization_id,
+                "property_id": property_id,
+                "field_name": field_name,
+                "value": value,
+                "classification": "SOURCE_DATA" if self._has_value(value) else "UNKNOWN",
+                "source": property_record.source if self._has_value(value) else None,
+                "confidence": "VERIFIED" if self._has_value(value) else "UNKNOWN",
+                "updated_at": retrieved_at,
+            }
+            fields_to_upsert.append(field_values)
+        if fields_to_upsert:
+            self.client.table("property_fields").upsert(fields_to_upsert, on_conflict="property_id,field_name").execute()
+
+    @staticmethod
+    def _property_values(property_record: CanonicalProperty) -> dict[str, Any]:
+        return {
+            "source": property_record.source,
+            "provider_property_id": property_record.provider_property_id,
+            "provider_listing_id": property_record.provider_listing_id,
+            "address": property_record.address,
+            "city": property_record.city,
+            "state": property_record.state,
+            "zip": property_record.zip_code,
+            "latitude": property_record.latitude,
+            "longitude": property_record.longitude,
+            "property_type": property_record.property_type,
+            "list_price": property_record.list_price,
+            "listing_url": property_record.listing_url,
+            "primary_photo": property_record.primary_photo,
+            "photos": property_record.photos,
+            "beds": property_record.beds,
+            "baths": property_record.baths,
+            "living_area": property_record.living_area,
+            "lot_size": property_record.lot_size,
+            "year_built": property_record.year_built,
+            "listing_status": property_record.listing_status,
+            "days_on_market": property_record.days_on_market,
+        }
+
+    @staticmethod
+    def _provenance(property_record: CanonicalProperty, retrieved_at: str, existing: dict[str, Any]) -> dict[str, dict[str, str]]:
+        provenance: dict[str, dict[str, str]] = {}
+        for field_name, value in OrganizationRepository._property_values(property_record).items():
+            if field_name in {"source", "provider_property_id", "provider_listing_id"}:
+                continue
+            previous = existing.get(field_name)
+            if not OrganizationRepository._has_value(value) and isinstance(previous, dict) and previous.get("classification") == "SOURCE_DATA":
+                provenance[field_name] = previous
+                continue
+            provenance[field_name] = {
+                "classification": "SOURCE_DATA" if OrganizationRepository._has_value(value) else "UNKNOWN",
+                "source": property_record.source if OrganizationRepository._has_value(value) else "UNKNOWN",
+                "retrieved_at": retrieved_at,
+            }
+        return provenance
+
+    @staticmethod
+    def _has_value(value: Any) -> bool:
+        return value is not None and value != "" and value != [] and value != "UNKNOWN"
 
     def append_activity(self, activity_type: str, description: str, user_id: str, deal_id: str | None = None, details: dict[str, Any] | None = None) -> None:
         self.client.table("activities").insert({"organization_id": self.organization_id, "deal_id": deal_id, "user_id": user_id, "activity_type": activity_type, "description": description, "details": details or {}}).execute()
