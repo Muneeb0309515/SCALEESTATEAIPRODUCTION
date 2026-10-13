@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from ..core.config import get_settings
 from .base import CanonicalProperty
+from .photo_urls import sanitize_provider_photo_url
 
 
 class RealtySearchCriteria(BaseModel):
@@ -112,11 +113,16 @@ class RealtyApiAdapter:
         normalized_photos = []
         for photo in photos:
             if isinstance(photo, str) and photo:
-                normalized_photos.append(photo)
-            elif isinstance(photo, dict):
-                photo_url = photo.get("href") or photo.get("url")
-                if isinstance(photo_url, str) and photo_url:
+                photo_url = sanitize_provider_photo_url(photo)
+                if photo_url and photo_url not in normalized_photos:
                     normalized_photos.append(photo_url)
+            elif isinstance(photo, dict):
+                for candidate in (photo.get("href"), photo.get("url")):
+                    photo_url = sanitize_provider_photo_url(candidate)
+                    if photo_url:
+                        if photo_url not in normalized_photos:
+                            normalized_photos.append(photo_url)
+                        break
         provider_id = item.get("property_id") or item.get("listing_id")
         if provider_id is None or str(provider_id).strip() == "":
             raise ValueError("RealtyAPI property record is missing property_id and listing_id")
@@ -127,7 +133,7 @@ class RealtyApiAdapter:
             city=str(address["city"]), state=str(address["state_code"]), zip_code=str(address["postal_code"]),
             latitude=address.get("latitude"), longitude=address.get("longitude"),
             property_type=str(item.get("property_type") or details.get("type") or "UNKNOWN"),
-            list_price=item.get("list_price"), listing_url=item.get("href"), primary_photo=item.get("primary_photo"), photos=normalized_photos,
+            list_price=item.get("list_price"), listing_url=item.get("href"), primary_photo=sanitize_provider_photo_url(item.get("primary_photo")), photos=normalized_photos,
             beds=details.get("beds", item.get("beds")), baths=baths, living_area=details.get("sqft", item.get("sqft")),
             lot_size=details.get("lot_sqft", item.get("lot_sqft")), year_built=details.get("year_built"),
             estimated_market_value=None, estimated_market_value_confidence=None,

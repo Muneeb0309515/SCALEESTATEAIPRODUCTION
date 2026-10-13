@@ -1,4 +1,5 @@
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -11,6 +12,7 @@ from backend.app.core.auth import AuthenticatedIdentity
 from backend.app.data import OrganizationScope
 from backend.app.providers.base import CanonicalProperty
 from backend.app.providers.realtyapi import RealtyApiAdapter, RealtySearchResult
+from backend.tests.test_property_persistence import ConcurrentFakeClient, ConcurrentStore
 
 
 def persisted_row(property_record, record_id="stored-property-1"):
@@ -95,6 +97,52 @@ class AuthenticatedPropertySearchTests(unittest.TestCase):
         adapter.search.assert_awaited_once()
         self.assertEqual(adapter.search.await_args.args[0].property_type, "single_family")
         self.assertEqual(adapter.search.await_args.args[0].limit, 1)
+
+    def test_concurrent_same_listing_http_requests_do_not_return_503_or_duplicate_properties(self):
+        request_count = 8
+        store = ConcurrentStore(request_count)
+        repository = object.__new__(main.OrganizationRepository)
+        repository.organization_id = "org-1"
+        repository.client = ConcurrentFakeClient(store)
+        scope = OrganizationScope(organization_id="org-1", user_id="user-1")
+        property_record = CanonicalProperty(
+            provider_property_id="racing-property-1",
+            address="123 Main St, Austin, TX 78744",
+            city="Austin",
+            state="TX",
+            zip_code="78744",
+            property_type="single_family",
+            list_price=275000,
+            source="realtyapi",
+        )
+        provider_response = RealtySearchResult(
+            results=[property_record], total=1, page=1, has_next_page=False,
+            retrieved_at=datetime.now(timezone.utc),
+        )
+        adapter = RealtyApiAdapter()
+        adapter.search = AsyncMock(return_value=provider_response)
+        main.app.dependency_overrides[main.require_organization_scope] = lambda: scope
+
+        def make_request():
+            with TestClient(main.app) as client:
+                return client.get(
+                    "/api/v1/providers/property-search",
+                    params={"location": "Austin, TX", "limit": 1},
+                    headers={"X-Organization-Id": "org-1"},
+                )
+
+        try:
+            with patch.object(main, "require_property_provider", return_value="realtyapi"), \
+                 patch.object(main, "get_property_provider", return_value=adapter), \
+                 patch.object(main, "OrganizationRepository", return_value=repository):
+                with ThreadPoolExecutor(max_workers=request_count) as executor:
+                    responses = list(executor.map(lambda _: make_request(), range(request_count)))
+        finally:
+            main.app.dependency_overrides.pop(main.require_organization_scope, None)
+
+        self.assertEqual([response.status_code for response in responses], [200] * request_count)
+        self.assertEqual(len(store["properties"]), 1)
+        self.assertEqual(len({response.json()["results"][0]["organization_property_id"] for response in responses}), 1)
 
     def test_authenticated_provider_detail_reaches_property_detail_route(self):
         identity = AuthenticatedIdentity(user_id="user-1", email="owner@example.com")

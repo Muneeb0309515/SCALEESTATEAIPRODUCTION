@@ -1,4 +1,6 @@
 import unittest
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -76,6 +78,57 @@ class FakeClient:
         return FakeQuery(table_name, self.store)
 
 
+class FakeUniqueViolation(Exception):
+    code = "23505"
+
+
+class ConcurrentStore(dict):
+    def __init__(self, party_count):
+        super().__init__({"properties": [], "property_fields": []})
+        self.lock = threading.RLock()
+        self.initial_lookup_count = 0
+        self.initial_lookup_barrier = threading.Barrier(party_count)
+
+
+class ConcurrentQuery(FakeQuery):
+    def execute(self):
+        is_property_lookup = (
+            self.table_name == "properties"
+            and self.inserted is None
+            and self.updated is None
+            and self.upserted is None
+        )
+        wait_for_initial_lookup = False
+        if is_property_lookup:
+            with self.store.lock:
+                if self.store.initial_lookup_count < self.store.initial_lookup_barrier.parties:
+                    self.store.initial_lookup_count += 1
+                    wait_for_initial_lookup = True
+            snapshot = super().execute()
+            if wait_for_initial_lookup:
+                self.store.initial_lookup_barrier.wait(timeout=10)
+            return snapshot
+
+        with self.store.lock:
+            if self.table_name == "properties" and self.inserted is not None:
+                table = self.store.setdefault("properties", [])
+                duplicate = any(
+                    row.get("organization_id") == self.inserted.get("organization_id")
+                    and row.get("source") == self.inserted.get("source")
+                    and row.get("provider_property_id") == self.inserted.get("provider_property_id")
+                    and row.get("provider_property_id") is not None
+                    for row in table
+                )
+                if duplicate:
+                    raise FakeUniqueViolation("duplicate key violates properties organization/source/provider unique index")
+            return super().execute()
+
+
+class ConcurrentFakeClient(FakeClient):
+    def table(self, table_name):
+        return ConcurrentQuery(table_name, self.store)
+
+
 class PropertyPersistenceTests(unittest.TestCase):
     def repository(self, store, organization_id="org-a"):
         repository = object.__new__(OrganizationRepository)
@@ -144,6 +197,26 @@ class PropertyPersistenceTests(unittest.TestCase):
         self.assertEqual(record["organization_id"], "org-a")
         self.assertEqual(len(store["properties"]), 2)
         self.assertNotEqual(record["id"], "org-b-property")
+
+    def test_concurrent_same_listing_recovers_unique_conflicts_without_503_errors_or_duplicates(self):
+        request_count = 8
+        store = ConcurrentStore(request_count)
+        repositories = [self.repository(store) for _ in range(request_count)]
+        for repository in repositories:
+            repository.client = ConcurrentFakeClient(store)
+
+        with ThreadPoolExecutor(max_workers=request_count) as executor:
+            records = list(
+                executor.map(
+                    lambda repository: repository.upsert_property(self.property_record()),
+                    repositories,
+                )
+            )
+
+        self.assertEqual(len(records), request_count)
+        self.assertEqual(len(store["properties"]), 1)
+        self.assertEqual(len({record["id"] for record in records}), 1)
+        self.assertEqual(len(store["property_fields"]), 21)
 
 
 if __name__ == "__main__":

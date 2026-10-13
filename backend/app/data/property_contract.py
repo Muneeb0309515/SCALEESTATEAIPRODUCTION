@@ -1,4 +1,5 @@
 from typing import Any
+from ..providers.photo_urls import sanitize_provider_photo_url, sanitize_provider_photo_urls
 
 
 def canonical_property_response(record: dict[str, Any]) -> dict[str, Any]:
@@ -17,8 +18,8 @@ def canonical_property_response(record: dict[str, Any]) -> dict[str, Any]:
         "list_price": record.get("list_price"),
         "estimated_market_value": record.get("estimated_market_value", record.get("estimated_value")),
         "listing_url": record.get("listing_url"),
-        "primary_photo": record.get("primary_photo"),
-        "photos": record.get("photos") if isinstance(record.get("photos"), list) else [],
+        "primary_photo": sanitize_provider_photo_url(record.get("primary_photo")),
+        "photos": sanitize_provider_photo_urls(record.get("photos")),
         "beds": record.get("beds"),
         "baths": record.get("baths"),
         "living_area": record.get("living_area"),

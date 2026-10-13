@@ -49,6 +49,40 @@ describe("approved SCALEESTATE architecture", () => {
     expect(shell).toContain('window.location.assign("/sign-in")');
     expect(shell).toContain('aria-label="Sign out of workspace"');
   });
+  it("invalidates deal-analysis results when inputs or the authenticated organization change", () => {
+    const analysis = readFileSync("components/DealAnalysisPanel.tsx", "utf8");
+    const sessions = readFileSync("lib/supabase-browser.ts", "utf8");
+    expect(analysis).toContain("getSupabaseSessionScopeKey(session)");
+    expect(analysis).toContain("calculationRevision.current += 1");
+    expect(analysis).toContain("Editing\n          any input clears prior results");
+    expect(sessions).toContain("onAuthStateChange");
+    expect(sessions).toContain("session.user.id");
+  });
+  it("clears organization-specific property data and aborts stale requests on account switches", () => {
+    const directory = readFileSync("components/PersistedPropertyDirectory.tsx", "utf8");
+    const detail = readFileSync("components/PropertyIntelligenceLive.tsx", "utf8");
+    const search = readFileSync("components/LivePropertySearch.tsx", "utf8");
+    for (const component of [directory, detail, search]) {
+      expect(component).toContain("getSupabaseSessionScopeKey(session)");
+      expect(component).toContain("observeSupabaseSession");
+      expect(component).toContain(".abort()");
+    }
+    expect(directory).toContain("setProperties([])");
+    expect(detail).toContain("setProperty(null)");
+    expect(search).toContain("setResults([])");
+  });
+  it("restricts provider property photos through a shared, documented URL allowlist", () => {
+    const policy = readFileSync("docs/PROPERTY_PHOTO_TRUST_POLICY.md", "utf8");
+    const helper = readFileSync("lib/property-photo-url.ts", "utf8");
+    const detail = readFileSync("components/PropertyIntelligenceLive.tsx", "utf8");
+    expect(helper).toContain('"rdcpix.com"');
+    expect(helper).toContain('"realtor.com"');
+    expect(helper).toContain('"realtyapi.io"');
+    expect(helper).toContain('parsed.protocol !== "https:"');
+    expect(policy).toContain('referrerPolicy="no-referrer"');
+    expect(policy).toContain("redirects");
+    expect(detail).toContain('referrerPolicy="no-referrer"');
+  });
   it("preserves search context through the direct sign-in handoff", () => {
     const search = readFileSync("components/LivePropertySearch.tsx", "utf8");
     const signInPage = readFileSync("app/sign-in/page.tsx", "utf8");

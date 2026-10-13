@@ -3,10 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CircleAlert, Filter, MapPinned, Search } from "lucide-react";
-import {
-  getPersistedSupabaseSession,
-  getSupabaseBrowserClient,
-} from "@/lib/supabase-browser";
+import { getSupabaseSessionScopeKey, observeSupabaseSession } from "@/lib/supabase-browser";
 
 type PersistedProperty = {
   organization_property_id: string;
@@ -42,66 +39,62 @@ export function PersistedPropertyDirectory() {
 
   useEffect(() => {
     let active = true;
-    async function load() {
-      try {
-        const client = getSupabaseBrowserClient();
-        const persistedSession = getPersistedSupabaseSession();
-        const session = client
-          ? await Promise.race([
-              client.auth
-                .getSession()
-                .then(({ data }) => data.session)
-                .catch(() => null),
-              new Promise<null>(resolve =>
-                window.setTimeout(() => resolve(null), 1500)
-              ),
-            ])
-          : null;
-        const resolvedSession = session ?? persistedSession;
-        const token = resolvedSession?.access_token;
-        const organizationId = getOrganizationId(resolvedSession);
-        if (!token)
-          throw new Error(
-            "Sign in to an approved workspace to load persisted properties."
-          );
-        if (!organizationId)
-          throw new Error(
-            "Your signed-in account is not assigned to an approved organization."
-          );
-        const controller = new AbortController();
-        const timeoutId = window.setTimeout(() => controller.abort(), 25000);
-        let response: Response;
+    let generation = 0;
+    let currentScope: string | null | undefined;
+    let requestController: AbortController | null = null;
+    const unsubscribe = observeSupabaseSession(session => {
+      if (!active) return;
+      const nextScope = getSupabaseSessionScopeKey(session);
+      if (nextScope === currentScope) return;
+      currentScope = nextScope;
+      const requestId = ++generation;
+      requestController?.abort();
+      requestController = null;
+      setProperties([]);
+      setError("");
+
+      const token = session?.access_token;
+      const organizationId = getOrganizationId(session);
+      if (!token || !organizationId) {
+        setLoading(false);
+        setError(!token
+          ? "Sign in to an approved workspace to load persisted properties."
+          : "Your signed-in account is not assigned to an approved organization.");
+        return;
+      }
+
+      setLoading(true);
+      const controller = new AbortController();
+      requestController = controller;
+      const timeoutId = window.setTimeout(() => controller.abort(), 25000);
+      void (async () => {
         try {
-          response = await fetch("/api/v1/properties", {
+          const response = await fetch("/api/v1/properties", {
             headers: {
               Authorization: `Bearer ${token}`,
               "X-Organization-Id": organizationId,
             },
             signal: controller.signal,
           });
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok)
+            throw new Error(body?.detail?.message ?? "Persisted properties could not be loaded.");
+          if (active && requestId === generation) setProperties(Array.isArray(body) ? body : []);
+        } catch (caught) {
+          if (active && requestId === generation)
+            setError(caught instanceof Error ? caught.message : "Persisted properties could not be loaded.");
         } finally {
           window.clearTimeout(timeoutId);
+          if (active && requestId === generation) setLoading(false);
+          if (requestController === controller) requestController = null;
         }
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok)
-          throw new Error(
-            body?.detail?.message ?? "Persisted properties could not be loaded."
-          );
-        if (active) setProperties(Array.isArray(body) ? body : []);
-      } catch (caught) {
-        if (active)
-          setError(
-            caught instanceof Error
-              ? caught.message
-              : "Persisted properties could not be loaded."
-          );
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
-    void load();
+      })();
+    });
     return () => {
       active = false;
+      generation += 1;
+      requestController?.abort();
+      unsubscribe();
     };
   }, []);
 

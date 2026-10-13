@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
-import { getPersistedSupabaseSession, getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getSupabaseBrowserClient, getSupabaseSessionScopeKey, observeSupabaseSession } from "@/lib/supabase-browser";
 import { ArrowRight, ChevronLeft, ChevronRight, Filter, MapPinned, Search, ShieldCheck } from "lucide-react";
 
 function getOrganizationId(session: { user?: { app_metadata?: Record<string, unknown> } } | null) {
@@ -57,6 +57,10 @@ export function LivePropertySearch() {
   const resumedSearch = useRef(false);
   const shouldResumeSearch = useRef(false);
   const searchRequestInFlight = useRef(false);
+  const searchRequestSequence = useRef(0);
+  const sessionRevision = useRef(0);
+  const currentScope = useRef<string | null | undefined>(undefined);
+  const activeSearchController = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -77,31 +81,30 @@ export function LivePropertySearch() {
   }, []);
 
   useEffect(() => {
-    let active = true;
-    let unsubscribe: () => void = () => {};
-    const finishAuthCheck = (session: Awaited<ReturnType<NonNullable<ReturnType<typeof getSupabaseBrowserClient>>["auth"]["getSession"]>>["data"]["session"] | null) => {
-      if (!active) return;
-      const persistedSession = getPersistedSupabaseSession();
-      const resolvedSession = session ?? persistedSession;
-      setSignedInEmail(resolvedSession?.user.email ?? null);
-      setAuthReady(true);
-    };
-    const fallbackTimer = window.setTimeout(() => finishAuthCheck(null), 1600);
-    try {
-      const client = getSupabaseBrowserClient();
-      const persistedSession = getPersistedSupabaseSession();
-      setSignedInEmail(persistedSession?.user.email ?? null);
-      if (!client) {
-        finishAuthCheck(null);
-        return () => { active = false; window.clearTimeout(fallbackTimer); };
+    const unsubscribe = observeSupabaseSession(session => {
+      const nextScope = getSupabaseSessionScopeKey(session);
+      if (nextScope !== currentScope.current) {
+        currentScope.current = nextScope;
+        sessionRevision.current += 1;
+        searchRequestSequence.current += 1;
+        activeSearchController.current?.abort();
+        activeSearchController.current = null;
+        searchRequestInFlight.current = false;
+        setResults([]);
+        setTotal(0);
+        setHasNextPage(false);
+        setError("");
+        setAccessIssue(null);
+        setLoading(false);
       }
-      void client.auth.getSession().then(({ data }) => finishAuthCheck(data.session)).catch(() => finishAuthCheck(null));
-      const { data: listener } = client.auth.onAuthStateChange((_event, session) => finishAuthCheck(session));
-      unsubscribe = () => listener.subscription.unsubscribe();
-    } catch {
-      finishAuthCheck(null);
-    }
-    return () => { active = false; window.clearTimeout(fallbackTimer); unsubscribe(); };
+      setSignedInEmail(session?.user.email ?? null);
+      setAuthReady(true);
+    });
+    return () => {
+      searchRequestSequence.current += 1;
+      activeSearchController.current?.abort();
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -116,6 +119,8 @@ export function LivePropertySearch() {
     event?.stopPropagation();
     if (searchRequestInFlight.current) return;
     searchRequestInFlight.current = true;
+    const requestId = ++searchRequestSequence.current;
+    const requestSessionRevision = sessionRevision.current;
     setPage(requestedPage);
     if (!location.trim()) {
       setError("Enter a city, ZIP code, neighborhood, or county to search.");
@@ -123,16 +128,22 @@ export function LivePropertySearch() {
       setLoading(false);
       return;
     }
+    if (!authReady) {
+      setError("Checking workspace authentication. Try the search again in a moment.");
+      searchRequestInFlight.current = false;
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError("");
     setAccessIssue(null);
+    let controller: AbortController | null = null;
+    let timeoutId: number | null = null;
     try {
       const client = getSupabaseBrowserClient();
-      const persistedSession = getPersistedSupabaseSession();
-      const session = client
-        ? await Promise.race([client.auth.getSession().then(({ data }) => data.session).catch(() => null), new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 1500))])
-        : null;
-      const resolvedSession = session ?? persistedSession;
+      const resolvedSession = client ? (await client.auth.getSession()).data.session : null;
+      if (requestId !== searchRequestSequence.current || requestSessionRevision !== sessionRevision.current) return;
+      if (getSupabaseSessionScopeKey(resolvedSession) !== currentScope.current) return;
       setSignedInEmail(resolvedSession?.user.email ?? null);
       setAuthReady(true);
       const accessToken = resolvedSession?.access_token;
@@ -150,18 +161,19 @@ export function LivePropertySearch() {
       if (status) params.set("status", status);
       if (maxPrice) params.set("max_price", maxPrice);
       if (minBeds) params.set("min_beds", minBeds);
-      const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 25000);
+      controller = new AbortController();
+      activeSearchController.current = controller;
+      timeoutId = window.setTimeout(() => controller?.abort(), 25000);
       let response: Response;
       try {
         response = await fetch(`/api/v1/providers/property-search?${params.toString()}`, { headers: { Authorization: `Bearer ${accessToken}`, "X-Organization-Id": organizationId }, signal: controller.signal });
       } catch (caught) {
+        if (requestId !== searchRequestSequence.current || requestSessionRevision !== sessionRevision.current) return;
         if (caught instanceof DOMException && caught.name === "AbortError") throw new Error("The property provider took too long to respond. Try a narrower location or search again.");
         throw new Error("The live property provider connection was interrupted. Search again in a moment.");
-      } finally {
-        window.clearTimeout(timeoutId);
       }
       const body = await response.json().catch(() => ({}));
+      if (requestId !== searchRequestSequence.current || requestSessionRevision !== sessionRevision.current) return;
       if (!response.ok) {
         const code = body?.detail?.code;
         setAccessIssue(code === "CONFIGURATION_REQUIRED" || code === "AUTHENTICATION_REQUIRED" ? "auth" : code === "ORGANIZATION_REQUIRED" || code === "ORGANIZATION_ACCESS_DENIED" ? "organization" : null);
@@ -171,13 +183,19 @@ export function LivePropertySearch() {
       setTotal(body.total ?? 0);
       setHasNextPage(Boolean(body.has_next_page));
     } catch (caught) {
-      setResults([]);
-      setTotal(0);
-      setHasNextPage(false);
-      setError(caught instanceof Error ? caught.message : "Property search is unavailable.");
+      if (requestId === searchRequestSequence.current && requestSessionRevision === sessionRevision.current) {
+        setResults([]);
+        setTotal(0);
+        setHasNextPage(false);
+        setError(caught instanceof Error ? caught.message : "Property search is unavailable.");
+      }
     } finally {
-      searchRequestInFlight.current = false;
-      setLoading(false);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      if (requestId === searchRequestSequence.current && requestSessionRevision === sessionRevision.current) {
+        searchRequestInFlight.current = false;
+        setLoading(false);
+        if (activeSearchController.current === controller) activeSearchController.current = null;
+      }
     }
   }
 

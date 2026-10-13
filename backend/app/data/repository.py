@@ -64,48 +64,101 @@ class OrganizationRepository:
 
         source_values = self._property_values(property_record)
         try:
-            lookup = (
-                self.client.table("properties")
-                .select("*")
-                .eq("organization_id", self.organization_id)
-                .eq("source", property_record.source)
-                .eq("provider_property_id", property_record.provider_property_id)
-                .limit(1)
-                .execute()
+            existing = self._find_property_by_identity(property_record)
+            metadata = self._property_metadata(
+                property_record, retrieved_at_text, provider_updated_at_text, existing
             )
-            existing = lookup.data[0] if lookup.data else None
-            provenance = self._provenance(property_record, retrieved_at_text, (existing or {}).get("provenance") or {})
-            metadata: dict[str, Any] = {
-                "source_retrieved_at": retrieved_at_text,
-                "last_seen_at": retrieved_at_text,
-                "provenance": provenance,
-            }
-            if provider_updated_at_text is not None:
-                metadata["data_updated_at"] = provider_updated_at_text
 
             if existing:
-                updates = {key: value for key, value in source_values.items() if self._has_value(value)}
-                updates.update(metadata)
-                response = (
-                    self.client.table("properties")
-                    .update(updates)
-                    .eq("organization_id", self.organization_id)
-                    .eq("id", existing["id"])
-                    .execute()
-                )
-                record = response.data[0] if response.data else {**existing, **updates}
+                record = self._update_existing_property(existing, source_values, metadata)
             else:
-                record = self.create("properties", {**source_values, **metadata})
+                try:
+                    record = self.create("properties", {**source_values, **metadata})
+                except Exception as insert_error:
+                    if not self._is_unique_violation(insert_error):
+                        raise
+
+                    # Another request may have inserted this provider identity
+                    # after our initial lookup. Re-read only within this
+                    # organization and merge through the same sparse-update
+                    # rules used for an ordinary existing record.
+                    existing = self._find_property_by_identity(property_record)
+                    if existing is None:
+                        raise insert_error
+                    metadata = self._property_metadata(
+                        property_record, retrieved_at_text, provider_updated_at_text, existing
+                    )
+                    record = self._update_existing_property(existing, source_values, metadata)
 
             self._persist_property_fields(record["id"], property_record, retrieved_at_text)
             return record
         except PropertyPersistenceError:
             raise
         except Exception as error:
-            detail = str(error).lower()
-            if "unique" in detail or "duplicate" in detail:
+            if self._is_unique_violation(error):
                 raise PropertyPersistenceError("PROPERTY_PERSISTENCE_CONFLICT", "The property already exists or conflicts with an existing property field.") from error
             raise PropertyPersistenceError("PROPERTY_PERSISTENCE_FAILED", "The property could not be persisted to the organization workspace.") from error
+
+    def _find_property_by_identity(self, property_record: CanonicalProperty) -> dict[str, Any] | None:
+        response = (
+            self.client.table("properties")
+            .select("*")
+            .eq("organization_id", self.organization_id)
+            .eq("source", property_record.source)
+            .eq("provider_property_id", property_record.provider_property_id)
+            .limit(1)
+            .execute()
+        )
+        return response.data[0] if response.data else None
+
+    def _property_metadata(
+        self,
+        property_record: CanonicalProperty,
+        retrieved_at: str,
+        provider_updated_at: str | None,
+        existing: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        prior_provenance = (existing or {}).get("provenance")
+        if not isinstance(prior_provenance, dict):
+            prior_provenance = {}
+        metadata: dict[str, Any] = {
+            "source_retrieved_at": retrieved_at,
+            "last_seen_at": retrieved_at,
+            "provenance": self._provenance(property_record, retrieved_at, prior_provenance),
+        }
+        if provider_updated_at is not None:
+            metadata["data_updated_at"] = provider_updated_at
+        return metadata
+
+    def _update_existing_property(
+        self,
+        existing: dict[str, Any],
+        source_values: dict[str, Any],
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        # Only populated provider values may replace canonical fields; sparse
+        # enrichments do not erase known values or their provenance.
+        updates = {key: value for key, value in source_values.items() if self._has_value(value)}
+        updates.update(metadata)
+        response = (
+            self.client.table("properties")
+            .update(updates)
+            .eq("organization_id", self.organization_id)
+            .eq("id", existing["id"])
+            .execute()
+        )
+        return response.data[0] if response.data else {**existing, **updates}
+
+    @staticmethod
+    def _is_unique_violation(error: Exception) -> bool:
+        details = " ".join(
+            (
+                str(error),
+                str(getattr(error, "code", "")),
+                str(getattr(error, "message", "")),
+            )
+        ).lower()
+        return "23505" in details or "unique" in details or "duplicate" in details
 
     def upsert_properties(self, property_records: list[CanonicalProperty]) -> list[dict[str, Any]]:
         return [self.upsert_property(property_record) for property_record in property_records]

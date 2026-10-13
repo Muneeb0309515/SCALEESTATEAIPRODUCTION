@@ -13,6 +13,51 @@ export function getSupabaseBrowserClient() {
   return browserClient;
 }
 
+/** Subscribe to the authoritative Supabase session, including account switches. */
+export function observeSupabaseSession(onSession: (session: Session | null) => void) {
+  let active = true;
+  let authEventRevision = 0;
+  let client: SupabaseClient | null;
+  try {
+    client = getSupabaseBrowserClient();
+  } catch {
+    onSession(null);
+    return () => { active = false; };
+  }
+  if (!client) {
+    onSession(null);
+    return () => { active = false; };
+  }
+
+  const { data: listener } = client.auth.onAuthStateChange((_event, session) => {
+    authEventRevision += 1;
+    if (active) onSession(session);
+  });
+  const startingRevision = authEventRevision;
+  void client.auth.getSession()
+    .then(({ data }) => {
+      if (active && authEventRevision === startingRevision) onSession(data.session);
+    })
+    .catch(() => {
+      if (active && authEventRevision === startingRevision) onSession(null);
+    });
+
+  return () => {
+    active = false;
+    listener.subscription.unsubscribe();
+  };
+}
+
+/** Stable per-user/per-organization key; token refreshes do not change the scope. */
+export function getSupabaseSessionScopeKey(session: Session | null): string | null {
+  if (!session?.access_token || !session.user?.id) return null;
+  const organizationId = session.user.app_metadata?.organization_id;
+  const organizationScope = typeof organizationId === "string" && organizationId.length > 0
+    ? organizationId
+    : "unassigned";
+  return `${session.user.id}:${organizationScope}`;
+}
+
 /**
  * Reads only the browser-persisted session as a short-lived bearer-token fallback.
  * The backend remains authoritative for JWT signature, issuer, expiry, audience,

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { CircleAlert, LoaderCircle } from "lucide-react";
 import {
-  getPersistedSupabaseSession,
   getSupabaseBrowserClient,
+  getSupabaseSessionScopeKey,
+  observeSupabaseSession,
 } from "@/lib/supabase-browser";
 
 type Metric = {
@@ -115,6 +116,29 @@ export function DealAnalysisPanel() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const calculationRevision = useRef(0);
+  const requestController = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    let currentScope: string | null | undefined;
+    const unsubscribe = observeSupabaseSession(session => {
+      const nextScope = getSupabaseSessionScopeKey(session);
+      if (nextScope === currentScope) return;
+      currentScope = nextScope;
+      calculationRevision.current += 1;
+      requestController.current?.abort();
+      requestController.current = null;
+      setValues({});
+      setResult(null);
+      setError("");
+      setLoading(false);
+    });
+    return () => {
+      calculationRevision.current += 1;
+      requestController.current?.abort();
+      unsubscribe();
+    };
+  }, []);
 
   function numberValue(key: string) {
     const raw = values[key];
@@ -134,24 +158,19 @@ export function DealAnalysisPanel() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const requestId = ++calculationRevision.current;
+    requestController.current?.abort();
+    const controller = new AbortController();
+    requestController.current = controller;
     setLoading(true);
     setError("");
     setResult(null);
     try {
       const client = getSupabaseBrowserClient();
-      const persistedSession = getPersistedSupabaseSession();
-      const session = client
-        ? await Promise.race([
-            client.auth
-              .getSession()
-              .then(({ data }) => data.session)
-              .catch(() => null),
-            new Promise<null>(resolve =>
-              window.setTimeout(() => resolve(null), 1500)
-            ),
-          ])
+      const resolvedSession = client
+        ? (await client.auth.getSession()).data.session
         : null;
-      const resolvedSession = session ?? persistedSession;
+      if (requestId !== calculationRevision.current) return;
       const token = resolvedSession?.access_token;
       const organizationId = getOrganizationId(resolvedSession);
       if (!token) throw new Error("Sign in to calculate deal analysis.");
@@ -182,8 +201,10 @@ export function DealAnalysisPanel() {
           "X-Organization-Id": organizationId,
         },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
       const body = await response.json().catch(() => ({}));
+      if (requestId !== calculationRevision.current) return;
       if (!response.ok)
         throw new Error(
           body?.detail?.message ??
@@ -191,13 +212,18 @@ export function DealAnalysisPanel() {
         );
       setResult(body as AnalysisResult);
     } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "The deterministic analysis request could not be completed."
-      );
+      if (requestId === calculationRevision.current) {
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "The deterministic analysis request could not be completed."
+        );
+      }
     } finally {
-      setLoading(false);
+      if (requestId === calculationRevision.current) {
+        setLoading(false);
+        if (requestController.current === controller) requestController.current = null;
+      }
     }
   }
 
@@ -205,8 +231,8 @@ export function DealAnalysisPanel() {
     <div className="deal-analysis-panel">
       <form onSubmit={submit}>
         <p className="analysis-note">
-          Inputs are explicitly marked USER_INPUT and are not saved. Missing
-          values remain UNKNOWN or INSUFFICIENT_DATA.
+          Inputs are explicitly marked USER_INPUT and are not saved. Editing
+          any input clears prior results; missing values remain UNKNOWN or INSUFFICIENT_DATA.
         </p>
         <div className="analysis-input-grid">
           {fields.map(field => (
@@ -219,12 +245,18 @@ export function DealAnalysisPanel() {
                 max={field.key === "mao_percentage" ? 100 : undefined}
                 inputMode="decimal"
                 value={values[field.key] ?? ""}
-                onChange={event =>
+                onChange={event => {
+                  calculationRevision.current += 1;
+                  requestController.current?.abort();
+                  requestController.current = null;
+                  setLoading(false);
+                  setResult(null);
+                  setError("");
                   setValues(current => ({
                     ...current,
                     [field.key]: event.target.value,
-                  }))
-                }
+                  }));
+                }}
               />
             </label>
           ))}

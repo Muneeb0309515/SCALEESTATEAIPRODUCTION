@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { BadgeCheck, CircleAlert, FileLock2, Search, Target, UserRoundCheck } from "lucide-react";
-import { getPersistedSupabaseSession, getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getSupabaseSessionScopeKey, observeSupabaseSession } from "@/lib/supabase-browser";
+import { isTrustedPropertyPhotoUrl } from "@/lib/property-photo-url";
 
 type PersistedProperty = {
   organization_property_id: string;
@@ -56,61 +57,70 @@ export function PropertyIntelligenceLive({ propertyId, address }: { propertyId: 
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setError("");
-    setProperty(null);
-    async function load() {
-      const persistedSession = getPersistedSupabaseSession();
-      const client = getSupabaseBrowserClient();
-      const session = client
-        ? await Promise.race([
-            client.auth.getSession().then(({ data }) => data.session).catch(() => null),
-            new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 1500)),
-          ])
-        : null;
-      const resolvedSession = session ?? persistedSession;
-      const token = resolvedSession?.access_token;
-      const organizationId = getOrganizationId(resolvedSession);
+    let generation = 0;
+    let currentScope: string | null | undefined;
+    let requestController: AbortController | null = null;
+    const unsubscribe = observeSupabaseSession(session => {
+      if (!active) return;
+      const nextScope = getSupabaseSessionScopeKey(session);
+      if (nextScope === currentScope) return;
+      currentScope = nextScope;
+      const requestId = ++generation;
+      requestController?.abort();
+      requestController = null;
+      setProperty(null);
+      setError("");
+
+      const token = session?.access_token;
+      const organizationId = getOrganizationId(session);
       if (!token || !organizationId) {
-        if (active) {
-          setLoading(false);
-          setError(!token ? "Sign in to an approved workspace to retrieve this persisted property record." : "Your signed-in account is not assigned to an approved organization.");
-        }
+        setLoading(false);
+        setError(!token
+          ? "Sign in to an approved workspace to retrieve this persisted property record."
+          : "Your signed-in account is not assigned to an approved organization.");
         return;
       }
-      try {
-        const controller = new AbortController();
-        const timeoutId = window.setTimeout(() => controller.abort(), 25000);
-        let response: Response;
+
+      setLoading(true);
+      const controller = new AbortController();
+      requestController = controller;
+      const timeoutId = window.setTimeout(() => controller.abort(), 25000);
+      void (async () => {
         try {
-          response = await fetch(`/api/v1/properties/${encodeURIComponent(propertyId)}`, {
+          const response = await fetch(`/api/v1/properties/${encodeURIComponent(propertyId)}`, {
             headers: { Authorization: `Bearer ${token}`, "X-Organization-Id": organizationId },
             signal: controller.signal,
           });
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(body?.detail?.message ?? "The persisted property detail could not be loaded.");
+          if (active && requestId === generation) setProperty(body as PersistedProperty);
+        } catch (caught) {
+          if (active && requestId === generation)
+            setError(caught instanceof Error ? caught.message : "The persisted property detail could not be loaded.");
         } finally {
           window.clearTimeout(timeoutId);
+          if (active && requestId === generation) setLoading(false);
+          if (requestController === controller) requestController = null;
         }
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(body?.detail?.message ?? "The persisted property detail could not be loaded.");
-        if (active) setProperty(body as PersistedProperty);
-      } catch (caught) {
-        if (active) setError(caught instanceof Error ? caught.message : "The persisted property detail could not be loaded.");
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
-    void load();
-    return () => { active = false; };
+      })();
+    });
+    return () => {
+      active = false;
+      generation += 1;
+      requestController?.abort();
+      unsubscribe();
+    };
   }, [propertyId]);
 
   const title = property?.address ?? (address || `Record ${propertyId}`);
-  const photos = (property?.photos ?? []).filter((photo) => /^https:\/\//i.test(photo));
+  const photos = [...new Set([property?.primary_photo, ...(property?.photos ?? [])]
+    .filter((photo): photo is string => isTrustedPropertyPhotoUrl(photo)))];
   return <>
     <header className="screen-header"><div><p className="eyebrow">Research workspace</p><h1>Property intelligence</h1><p>{property ? "Verified persisted provider record with source context intact." : error || `Resolving property record ${propertyId}…`}</p></div><Link href="/properties" className="button button-secondary">Back to properties</Link></header>
     {loading ? <div className="status-banner" role="status"><Search size={18} /><p><strong>Retrieving persisted property record.</strong> Organization-scoped property data is loading for {title}.</p><span>LOADING</span></div> : error ? <div className="status-banner critical" role="alert"><CircleAlert size={18}/><p><strong>Research unavailable.</strong> {error}</p><Badge /></div> : property ? <div className="status-banner"><BadgeCheck size={18}/><p><strong>Persisted source-backed record loaded.</strong> {property.source} remains attached to this organization property.</p><span>{property.source_retrieved_at ? new Date(property.source_retrieved_at).toLocaleDateString() : "RETRIEVAL UNKNOWN"}</span></div> : null}
     <div className="tab-strip"><button className="active" type="button">Details</button><button type="button" disabled>Owner</button><button type="button" disabled>Market</button><button type="button" disabled>Comparable sales</button><button type="button" disabled>Analysis</button><button type="button" disabled>Motivation</button></div>
     <div className="research-grid"><section className="panel"><header className="panel-heading"><div><h2>Property facts</h2><p>Normalized from persisted provider data; unknown fields remain explicit.</p></div></header><dl className="fact-list"><div><dt>Address</dt><dd>{property ? property.address : "UNKNOWN"} {property && <Badge>{property.source} · SOURCE DATA</Badge>}</dd></div><div><dt>County</dt><dd>UNKNOWN · Provider detail does not return a county</dd></div><div><dt>State / ZIP</dt><dd>{property ? `${valueOrUnknown(property.state)} · ${valueOrUnknown(property.zip_code)}` : "UNKNOWN"}</dd></div><div><dt>Property type</dt><dd>{valueOrUnknown(property?.property_type)}</dd></div><div><dt>Beds / baths / living area</dt><dd>{property ? `${valueOrUnknown(property.beds)} bd · ${valueOrUnknown(property.baths)} ba · ${property.living_area !== null && property.living_area !== undefined ? `${property.living_area.toLocaleString()} sf` : "UNKNOWN"}` : "UNKNOWN"}</dd></div><div><dt>Lot size / year built</dt><dd>{property ? `${property.lot_size !== null && property.lot_size !== undefined ? `${property.lot_size.toLocaleString()} sf` : "UNKNOWN"} · ${valueOrUnknown(property.year_built)}` : "UNKNOWN"}</dd></div><div><dt>Listing status / days on market</dt><dd>{property ? `${valueOrUnknown(property.listing_status)} · ${property.days_on_market === null || property.days_on_market === undefined ? "UNKNOWN" : `${property.days_on_market} days`}` : "UNKNOWN"}</dd></div><div><dt>List price</dt><dd>{formatPrice(property?.list_price)}</dd></div><div><dt>Provider update time</dt><dd>{property?.data_updated_at ? `${property.source} · ${new Date(property.data_updated_at).toLocaleString()}` : "UNKNOWN · RealtyAPI did not supply a verified update timestamp"}</dd></div><div><dt>Source retrieved</dt><dd>{property?.source_retrieved_at ? new Date(property.source_retrieved_at).toLocaleString() : "UNKNOWN · Retrieval timestamp unavailable"}</dd></div></dl></section>
-      <section className="panel"><header className="panel-heading"><div><h2>Source photos</h2><p>Only HTTPS photos returned by RealtyAPI are shown.</p></div></header>{photos.length ? <div className="photo-grid">{photos.map((photo) => <img key={photo} src={photo} alt={`Provider-supplied view of ${property?.address ?? "property"}`} loading="lazy" />)}</div> : <div className="empty-state"><span className="empty-icon"><Search size={22}/></span><h3>Photos unavailable</h3><p>RealtyAPI did not supply photos for this record.</p></div>}</section>
+      <section className="panel"><header className="panel-heading"><div><h2>Source photos</h2><p>Only HTTPS photos from approved provider hosts are shown.</p></div></header>{photos.length ? <div className="photo-grid">{photos.map((photo) => <img key={photo} src={photo} alt={`Provider-supplied view of ${property?.address ?? "property"}`} loading="lazy" referrerPolicy="no-referrer" />)}</div> : <div className="empty-state"><span className="empty-icon"><Search size={22}/></span><h3>Photos unavailable</h3><p>No photos from an approved provider host were supplied for this record.</p></div>}</section>
       <section className="panel"><header className="panel-heading"><div><h2>Research integrity</h2><p>Provider fields stay separate from calculated and unknown data.</p></div></header><div className="integrity-list"><div><BadgeCheck size={17}/><span><strong>Source-aware fields</strong><small>Provider, classification, and retrieval time stay with each persisted value.</small></span></div><div><UserRoundCheck size={17}/><span><strong>Owner information</strong><small>Only legally available contact details may be displayed.</small></span></div><div><FileLock2 size={17}/><span><strong>Correction trail</strong><small>User flags and overrides become auditable activity records.</small></span></div></div></section></div>
     <section className="panel"><header className="panel-heading"><div><h2>Comparable-sales review</h2><p>The deterministic comp engine records selection factors, outlier classification, scores, and exclusions.</p></div></header><div className="comp-controls"><span><label>Distance radius</label><strong>Requires configuration</strong></span><span><label>Recency window</label><strong>Requires configuration</strong></span><span><label>Size tolerance</label><strong>Requires configuration</strong></span><button className="button button-secondary" type="button" disabled>Recalculate ARV</button></div><div className="empty-state"><span className="empty-icon"><Target size={22}/></span><h3>Comparable provider unavailable</h3><p>No approved live comparable provider is configured. ARV remains INSUFFICIENT_DATA; no comparable records are fabricated.</p></div></section>
   </>;
