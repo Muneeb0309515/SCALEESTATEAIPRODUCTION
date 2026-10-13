@@ -11,6 +11,14 @@ describe("approved SCALEESTATE architecture", () => {
     expect(source).toContain("Do not calculate financial metrics");
     expect(source).toContain("user-reviewable draft");
   });
+  it("keeps the public homepage connected to authenticated property search", () => {
+    const homepage = readFileSync("app/page.tsx", "utf8");
+    const landingPage = readFileSync("components/ScaleestateLandingPage.tsx", "utf8");
+    expect(homepage).toContain("ScaleestateLandingPage");
+    expect(landingPage).toContain("<LivePropertySearch />");
+    expect(landingPage).toContain("authenticated backend");
+    expect(existsSync("public/images/scaleestate-hero.webp")).toBe(true);
+  });
   it("keeps property search filters functional through the preview proxy", () => {
     const search = readFileSync("components/LivePropertySearch.tsx", "utf8");
     const nextConfig = readFileSync("next.config.ts", "utf8");
@@ -20,10 +28,24 @@ describe("approved SCALEESTATE architecture", () => {
     expect(nextConfig).toContain("3000-iz9chabu4d2hf544lzxnj-e1a973e9.us3.manus.computer");
     expect(nextConfig).toContain("3000-ifk2c0egk8r030vh4b39k-2c723fe6.us1.manus.computer");
   });
+  it("does not claim the property provider is connected before server verification", () => {
+    const search = readFileSync("components/LivePropertySearch.tsx", "utf8");
+    expect(search).toContain("Server-side connectivity is checked when you search");
+    expect(search).not.toContain("Live provider connected.");
+    expect(search).not.toContain("RealtyAPI.io is configured server-side.");
+    expect(search).not.toContain("RealtyAPI.io search route ready");
+  });
   it("guards search resume and duplicate submissions", () => {
     const search = readFileSync("components/LivePropertySearch.tsx", "utf8");
+    const styles = readFileSync("app/search-loading.css", "utf8");
     expect(search).toContain("searchRequestInFlight");
     expect(search).toContain("event?.stopPropagation()");
+    expect(search).toContain('role="search"');
+    expect(search).toContain('type="button" onClick={() => void submit(undefined, 1)}');
+    expect(search).toContain("PropertyResultsSkeleton");
+    expect(search).toContain("Loading results…");
+    expect(styles).toContain("search-shimmer");
+    expect(styles).toMatch(/prefers-reduced-motion:\s*reduce/);
     expect(search).toContain('params.delete("resume")');
     expect(search).toContain("window.history.replaceState");
   });
@@ -33,6 +55,40 @@ describe("approved SCALEESTATE architecture", () => {
     expect(shell).toContain("localStorage.removeItem");
     expect(shell).toContain('window.location.assign("/sign-in")');
     expect(shell).toContain('aria-label="Sign out of workspace"');
+  });
+  it("invalidates deal-analysis results when inputs or the authenticated organization change", () => {
+    const analysis = readFileSync("components/DealAnalysisPanel.tsx", "utf8");
+    const sessions = readFileSync("lib/supabase-browser.ts", "utf8");
+    expect(analysis).toContain("getSupabaseSessionScopeKey(session)");
+    expect(analysis).toContain("calculationRevision.current += 1");
+    expect(analysis).toContain("Editing\n          any input clears prior results");
+    expect(sessions).toContain("onAuthStateChange");
+    expect(sessions).toContain("session.user.id");
+  });
+  it("clears organization-specific property data and aborts stale requests on account switches", () => {
+    const directory = readFileSync("components/PersistedPropertyDirectory.tsx", "utf8");
+    const detail = readFileSync("components/PropertyIntelligenceLive.tsx", "utf8");
+    const search = readFileSync("components/LivePropertySearch.tsx", "utf8");
+    for (const component of [directory, detail, search]) {
+      expect(component).toContain("getSupabaseSessionScopeKey(session)");
+      expect(component).toContain("observeSupabaseSession");
+      expect(component).toContain(".abort()");
+    }
+    expect(directory).toContain("setProperties([])");
+    expect(detail).toContain("setProperty(null)");
+    expect(search).toContain("setResults([])");
+  });
+  it("restricts provider property photos through a shared, documented URL allowlist", () => {
+    const policy = readFileSync("docs/PROPERTY_PHOTO_TRUST_POLICY.md", "utf8");
+    const helper = readFileSync("lib/property-photo-url.ts", "utf8");
+    const detail = readFileSync("components/PropertyIntelligenceLive.tsx", "utf8");
+    expect(helper).toContain('"rdcpix.com"');
+    expect(helper).toContain('"realtor.com"');
+    expect(helper).toContain('"realtyapi.io"');
+    expect(helper).toContain('parsed.protocol !== "https:"');
+    expect(policy).toContain('referrerPolicy="no-referrer"');
+    expect(policy).toContain("redirects");
+    expect(detail).toContain('referrerPolicy="no-referrer"');
   });
   it("preserves search context through the direct sign-in handoff", () => {
     const search = readFileSync("components/LivePropertySearch.tsx", "utf8");

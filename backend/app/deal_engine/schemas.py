@@ -14,6 +14,7 @@ class DataClassification(str, Enum):
 
 class ResultState(str, Enum):
     CALCULATED = "CALCULATED"
+    PROVIDED = "PROVIDED"
     UNKNOWN = "UNKNOWN"
     INSUFFICIENT_DATA = "INSUFFICIENT_DATA"
     INVALID_INPUT = "INVALID_INPUT"

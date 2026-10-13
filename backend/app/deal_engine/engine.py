@@ -4,7 +4,7 @@ from .schemas import AnalysisInput, AnalysisResult, DataClassification, MetricRe
 
 
 def _unknown(reason: str, state: ResultState = ResultState.UNKNOWN) -> MetricResult:
-    return MetricResult(state=state, reason=reason)
+    return MetricResult(state=state, classification=DataClassification.UNKNOWN, reason=reason)
 
 
 def _number(number, name: str):
@@ -15,6 +15,26 @@ def _number(number, name: str):
 
 def _calculated(value: float, formula: str, **inputs: float) -> MetricResult:
     return MetricResult(state=ResultState.CALCULATED, value=round(value, 2), formula=formula, inputs=inputs)
+
+
+def _provided_arv(data: AnalysisInput, value: float | None, error: str | None) -> MetricResult:
+    if value is None:
+        return _unknown(error or "Qualified comparables are unavailable", ResultState.INSUFFICIENT_DATA)
+
+    supplied_arv = data.arv
+    provenance = {}
+    if supplied_arv and supplied_arv.source:
+        provenance["source"] = supplied_arv.source
+    if supplied_arv and supplied_arv.confidence:
+        provenance["confidence"] = supplied_arv.confidence
+
+    return MetricResult(
+        state=ResultState.PROVIDED,
+        value=value,
+        classification=supplied_arv.classification if supplied_arv else DataClassification.UNKNOWN,
+        inputs=provenance,
+        reason="ARV is passed through from the supplied input; this endpoint does not calculate or independently verify weighted comparable value.",
+    )
 
 
 def calculate_analysis(data: AnalysisInput) -> AnalysisResult:
@@ -44,4 +64,22 @@ def calculate_analysis(data: AnalysisInput) -> AnalysisResult:
     invested, invested_error = _number(data.assumptions.total_invested_capital, "Total invested capital")
     roi = _calculated(profit / invested * 100, "ROI % = Net Profit / Total Invested Capital × 100", net_profit=profit, total_invested_capital=invested) if profit is not None and invested not in (None, 0) else _unknown(profit_error or invested_error or "Total invested capital must be available and non-zero")
     price_vs_arv = _calculated(asking / arv * 100, "Price vs ARV % = Asking Price / ARV × 100", asking_price=asking, arv=arv) if asking is not None and arv not in (None, 0) else _unknown(asking_error or arv_error or "ARV must be available and non-zero")
-    return AnalysisResult(arv=MetricResult(state=ResultState.CALCULATED, value=arv, formula="ARV = Weighted Comparable Value") if arv is not None else _unknown(arv_error or "Qualified comparables are unavailable", ResultState.INSUFFICIENT_DATA), equity=equity, mao=mao, wholesale_spread=spread, wholesale_margin=margin, flip_profit=flip, roi=roi, price_vs_comps=_unknown("Qualified comparable weights and selection configuration are required", ResultState.CONFIGURATION_REQUIRED), price_vs_arv=price_vs_arv, deal_score=_unknown("Configurable deterministic deal-score weights are required", ResultState.CONFIGURATION_REQUIRED), risk_score=_unknown("Configurable deterministic risk thresholds are required", ResultState.CONFIGURATION_REQUIRED), classification=_unknown("Final classification requires configured deterministic score and risk rules", ResultState.CONFIGURATION_REQUIRED), explanation=["Formula results are server-side CALCULATED_DATA.", "Missing inputs retain UNKNOWN or INSUFFICIENT_DATA status.", "AI cannot calculate, overwrite, or re-rank financial results."])
+    return AnalysisResult(
+        arv=_provided_arv(data, arv, arv_error),
+        equity=equity,
+        mao=mao,
+        wholesale_spread=spread,
+        wholesale_margin=margin,
+        flip_profit=flip,
+        roi=roi,
+        price_vs_comps=_unknown("Qualified comparable weights and selection configuration are required", ResultState.CONFIGURATION_REQUIRED),
+        price_vs_arv=price_vs_arv,
+        deal_score=_unknown("Configurable deterministic deal-score weights are required", ResultState.CONFIGURATION_REQUIRED),
+        risk_score=_unknown("Configurable deterministic risk thresholds are required", ResultState.CONFIGURATION_REQUIRED),
+        classification=_unknown("Final classification requires configured deterministic score and risk rules", ResultState.CONFIGURATION_REQUIRED),
+        explanation=[
+            "Derived metrics are calculated server-side as CALCULATED_DATA; supplied input classifications are preserved.",
+            "Missing inputs retain UNKNOWN or INSUFFICIENT_DATA status.",
+            "AI cannot calculate, overwrite, or re-rank financial results.",
+        ],
+    )

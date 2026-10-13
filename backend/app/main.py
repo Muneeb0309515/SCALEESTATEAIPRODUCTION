@@ -14,6 +14,8 @@ from .core.auth import AuthenticatedIdentity, require_authenticated_identity
 from .data import OrganizationRepository, OrganizationScope, require_organization_scope
 from .data.models import BuyerCreate, DealCreate, SavedSearchCreate, SellerCreate, TaskCreate
 from .data.workflow_models import BuyerCriteriaUpdate, BuyerOfferCreate, ClosingRecord, DistributionCreate, DistributionResponse, FollowUpCreate, OutreachCreate, TransactionCreate
+from .data.property_contract import canonical_property_response
+from .data.repository import PropertyPersistenceError
 from .scoring import ClassificationConfiguration, WeightedScoreConfiguration, WeightedScoreInput, calculate_final_classification, calculate_weighted_score
 from .motivation import MotivationInput, detect_motivation_signals
 from .providers import get_property_provider
@@ -44,7 +46,8 @@ async def auth_session(identity: AuthenticatedIdentity = Depends(require_authent
 
 @app.get("/api/v1/properties")
 async def list_properties(scope: OrganizationScope = Depends(require_organization_scope)):
-    return OrganizationRepository(scope.organization_id).list("properties", "updated_at")
+    records = OrganizationRepository(scope.organization_id).list("properties", "updated_at")
+    return [canonical_property_response(record) for record in records]
 
 @app.get("/api/v1/saved-searches")
 async def list_saved_searches(scope: OrganizationScope = Depends(require_organization_scope)):
@@ -62,7 +65,7 @@ async def get_property(property_id: str, scope: OrganizationScope = Depends(requ
     record = OrganizationRepository(scope.organization_id).get("properties", property_id)
     if not record:
         raise HTTPException(status_code=404, detail={"code": "PROPERTY_NOT_FOUND", "message": "No property was found in this organization."})
-    return record
+    return canonical_property_response(record)
 
 @app.get("/api/v1/properties/{property_id}/sales-history")
 async def get_sales_history(property_id: str, scope: OrganizationScope = Depends(require_organization_scope)):
@@ -297,7 +300,14 @@ async def property_search_preview(
         if provider_name != "realtyapi" or not isinstance(provider, RealtyApiAdapter):
             raise HTTPException(status_code=501, detail={"code": "ADAPTER_ENDPOINT_REQUIRED", "message": "The configured provider adapter is not available."})
         criteria = RealtySearchCriteria(location=location, page=page, limit=limit, min_price=min_price, max_price=max_price, min_beds=min_beds, max_beds=max_beds, min_baths=min_baths, property_type=property_type, status=status)
-        return await provider.search(criteria)
+        result = await provider.search(criteria)
+        if not result.results:
+            return result
+        try:
+            persisted_records = OrganizationRepository(scope.organization_id).upsert_properties(result.results)
+        except PropertyPersistenceError as error:
+            raise HTTPException(status_code=503, detail={"code": error.code, "message": error.message}) from error
+        return {**result.model_dump(mode="json"), "results": [canonical_property_response(record) for record in persisted_records]}
     except IntegrationUnavailable as error:
         raise HTTPException(status_code=503, detail={"code": error.code, "message": error.message}) from error
     except httpx.HTTPStatusError as error:
@@ -317,7 +327,12 @@ async def property_detail(
         provider = get_property_provider()
         if provider_name != "realtyapi" or not isinstance(provider, RealtyApiAdapter):
             raise HTTPException(status_code=501, detail={"code": "ADAPTER_ENDPOINT_REQUIRED", "message": "The configured provider adapter is not available."})
-        return await provider.details_by_address(address)
+        property_record = await provider.details_by_address(address)
+        try:
+            persisted_record = OrganizationRepository(scope.organization_id).upsert_property(property_record)
+        except PropertyPersistenceError as error:
+            raise HTTPException(status_code=503, detail={"code": error.code, "message": error.message}) from error
+        return canonical_property_response(persisted_record)
     except IntegrationUnavailable as error:
         raise HTTPException(status_code=503, detail={"code": error.code, "message": error.message}) from error
     except httpx.HTTPStatusError as error:

@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useRef, useState } from "react";
-import { getPersistedSupabaseSession, getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import type { FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
+import { getSupabaseBrowserClient, getSupabaseSessionScopeKey, observeSupabaseSession } from "@/lib/supabase-browser";
 import { ArrowRight, ChevronLeft, ChevronRight, Filter, MapPinned, Search, ShieldCheck } from "lucide-react";
 
 function getOrganizationId(session: { user?: { app_metadata?: Record<string, unknown> } } | null) {
@@ -11,6 +12,7 @@ function getOrganizationId(session: { user?: { app_metadata?: Record<string, unk
 }
 
 type PropertyResult = {
+  organization_property_id: string;
   provider_property_id: string;
   address: string;
   city: string;
@@ -23,8 +25,19 @@ type PropertyResult = {
   living_area?: number | null;
   listing_status?: string | null;
   source: string;
-  data_updated_at: string;
+  data_updated_at?: string | null;
+  source_retrieved_at?: string | null;
 };
+
+function PropertyResultsSkeleton() {
+  return <div className="live-results search-results-skeleton" aria-label="Loading property results" aria-busy="true">
+    {Array.from({ length: 4 }, (_, index) => <div className="result-skeleton" key={index} aria-hidden="true">
+      <div className="skeleton-copy"><span className="skeleton-line skeleton-address" /><span className="skeleton-line skeleton-subline" /><span className="skeleton-line skeleton-source" /></div>
+      <div className="skeleton-meta"><span className="skeleton-line skeleton-price" /><span className="skeleton-line skeleton-details" /></div>
+      <span className="skeleton-arrow" />
+    </div>)}
+  </div>;
+}
 
 export function LivePropertySearch() {
   const [location, setLocation] = useState("");
@@ -44,6 +57,10 @@ export function LivePropertySearch() {
   const resumedSearch = useRef(false);
   const shouldResumeSearch = useRef(false);
   const searchRequestInFlight = useRef(false);
+  const searchRequestSequence = useRef(0);
+  const sessionRevision = useRef(0);
+  const currentScope = useRef<string | null | undefined>(undefined);
+  const activeSearchController = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -64,31 +81,30 @@ export function LivePropertySearch() {
   }, []);
 
   useEffect(() => {
-    let active = true;
-    let unsubscribe: () => void = () => {};
-    const finishAuthCheck = (session: Awaited<ReturnType<NonNullable<ReturnType<typeof getSupabaseBrowserClient>>["auth"]["getSession"]>>["data"]["session"] | null) => {
-      if (!active) return;
-      const persistedSession = getPersistedSupabaseSession();
-      const resolvedSession = session ?? persistedSession;
-      setSignedInEmail(resolvedSession?.user.email ?? null);
-      setAuthReady(true);
-    };
-    const fallbackTimer = window.setTimeout(() => finishAuthCheck(null), 1600);
-    try {
-      const client = getSupabaseBrowserClient();
-      const persistedSession = getPersistedSupabaseSession();
-      setSignedInEmail(persistedSession?.user.email ?? null);
-      if (!client) {
-        finishAuthCheck(null);
-        return () => { active = false; window.clearTimeout(fallbackTimer); };
+    const unsubscribe = observeSupabaseSession(session => {
+      const nextScope = getSupabaseSessionScopeKey(session);
+      if (nextScope !== currentScope.current) {
+        currentScope.current = nextScope;
+        sessionRevision.current += 1;
+        searchRequestSequence.current += 1;
+        activeSearchController.current?.abort();
+        activeSearchController.current = null;
+        searchRequestInFlight.current = false;
+        setResults([]);
+        setTotal(0);
+        setHasNextPage(false);
+        setError("");
+        setAccessIssue(null);
+        setLoading(false);
       }
-      void client.auth.getSession().then(({ data }) => finishAuthCheck(data.session)).catch(() => finishAuthCheck(null));
-      const { data: listener } = client.auth.onAuthStateChange((_event, session) => finishAuthCheck(session));
-      unsubscribe = () => listener.subscription.unsubscribe();
-    } catch {
-      finishAuthCheck(null);
-    }
-    return () => { active = false; window.clearTimeout(fallbackTimer); unsubscribe(); };
+      setSignedInEmail(session?.user.email ?? null);
+      setAuthReady(true);
+    });
+    return () => {
+      searchRequestSequence.current += 1;
+      activeSearchController.current?.abort();
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -103,6 +119,8 @@ export function LivePropertySearch() {
     event?.stopPropagation();
     if (searchRequestInFlight.current) return;
     searchRequestInFlight.current = true;
+    const requestId = ++searchRequestSequence.current;
+    const requestSessionRevision = sessionRevision.current;
     setPage(requestedPage);
     if (!location.trim()) {
       setError("Enter a city, ZIP code, neighborhood, or county to search.");
@@ -110,16 +128,22 @@ export function LivePropertySearch() {
       setLoading(false);
       return;
     }
+    if (!authReady) {
+      setError("Checking workspace authentication. Try the search again in a moment.");
+      searchRequestInFlight.current = false;
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError("");
     setAccessIssue(null);
+    let controller: AbortController | null = null;
+    let timeoutId: number | null = null;
     try {
       const client = getSupabaseBrowserClient();
-      const persistedSession = getPersistedSupabaseSession();
-      const session = client
-        ? await Promise.race([client.auth.getSession().then(({ data }) => data.session).catch(() => null), new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 1500))])
-        : null;
-      const resolvedSession = session ?? persistedSession;
+      const resolvedSession = client ? (await client.auth.getSession()).data.session : null;
+      if (requestId !== searchRequestSequence.current || requestSessionRevision !== sessionRevision.current) return;
+      if (getSupabaseSessionScopeKey(resolvedSession) !== currentScope.current) return;
       setSignedInEmail(resolvedSession?.user.email ?? null);
       setAuthReady(true);
       const accessToken = resolvedSession?.access_token;
@@ -137,18 +161,19 @@ export function LivePropertySearch() {
       if (status) params.set("status", status);
       if (maxPrice) params.set("max_price", maxPrice);
       if (minBeds) params.set("min_beds", minBeds);
-      const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 25000);
+      controller = new AbortController();
+      activeSearchController.current = controller;
+      timeoutId = window.setTimeout(() => controller?.abort(), 25000);
       let response: Response;
       try {
         response = await fetch(`/api/v1/providers/property-search?${params.toString()}`, { headers: { Authorization: `Bearer ${accessToken}`, "X-Organization-Id": organizationId }, signal: controller.signal });
       } catch (caught) {
+        if (requestId !== searchRequestSequence.current || requestSessionRevision !== sessionRevision.current) return;
         if (caught instanceof DOMException && caught.name === "AbortError") throw new Error("The property provider took too long to respond. Try a narrower location or search again.");
         throw new Error("The live property provider connection was interrupted. Search again in a moment.");
-      } finally {
-        window.clearTimeout(timeoutId);
       }
       const body = await response.json().catch(() => ({}));
+      if (requestId !== searchRequestSequence.current || requestSessionRevision !== sessionRevision.current) return;
       if (!response.ok) {
         const code = body?.detail?.code;
         setAccessIssue(code === "CONFIGURATION_REQUIRED" || code === "AUTHENTICATION_REQUIRED" ? "auth" : code === "ORGANIZATION_REQUIRED" || code === "ORGANIZATION_ACCESS_DENIED" ? "organization" : null);
@@ -158,13 +183,19 @@ export function LivePropertySearch() {
       setTotal(body.total ?? 0);
       setHasNextPage(Boolean(body.has_next_page));
     } catch (caught) {
-      setResults([]);
-      setTotal(0);
-      setHasNextPage(false);
-      setError(caught instanceof Error ? caught.message : "Property search is unavailable.");
+      if (requestId === searchRequestSequence.current && requestSessionRevision === sessionRevision.current) {
+        setResults([]);
+        setTotal(0);
+        setHasNextPage(false);
+        setError(caught instanceof Error ? caught.message : "Property search is unavailable.");
+      }
     } finally {
-      searchRequestInFlight.current = false;
-      setLoading(false);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      if (requestId === searchRequestSequence.current && requestSessionRevision === sessionRevision.current) {
+        searchRequestInFlight.current = false;
+        setLoading(false);
+        if (activeSearchController.current === controller) activeSearchController.current = null;
+      }
     }
   }
 
@@ -190,9 +221,23 @@ export function LivePropertySearch() {
 
   return <>
     <header className="screen-header"><div><p className="eyebrow">Property discovery</p><h1>Find the next defensible opportunity.</h1><p>Search Realtor listings through RealtyAPI.io, retain source context, and move only verified records into research.</p></div><Link href="/settings" className="button button-secondary"><ShieldCheck size={16} /> Provider status</Link></header>
-    <div className="status-banner"><ShieldCheck size={18} /><p><strong>Live provider connected.</strong> RealtyAPI.io is configured server-side. {authReady ? signedInEmail ? `Authenticated as ${signedInEmail}.` : "Sign in before submitting a live search." : "Checking workspace authentication…"}</p><span>REALTYAPI.IO</span></div>
-    <form className="panel filter-panel" onSubmit={submit}><div className="filter-topline"><div><span className="eyebrow">Search criteria</span><p>Search by city, ZIP, neighborhood, or county. Every result retains provider freshness.</p></div><Link href="/search" className="text-button"><Filter size={15} /> Saved criteria</Link></div><div className="filters"><label className="filter-field wide"><span>Location</span><input aria-label="Location" className="live-input" value={location} onChange={(event) => { setLocation(event.target.value); setPage(1); }} placeholder="Austin, TX or 78744" /></label><label className="filter-field"><span>Property category</span><select aria-label="Property category" className="live-input" value={propertyType} onChange={(event) => { setPropertyType(event.target.value); setPage(1); }}><option value="">All property types</option><option value="single_family">Single family</option><option value="condo">Condominium</option><option value="townhome">Townhome</option><option value="multi_family">Multi-family</option><option value="land">Land</option></select></label><label className="filter-field"><span>Listing status</span><select aria-label="Listing status" className="live-input" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="">Active & pending</option><option value="for_sale">For sale</option><option value="pending">Pending</option><option value="sold">Sold</option></select></label><label className="filter-field"><span>Maximum price</span><select aria-label="Maximum price" className="live-input" value={maxPrice} onChange={(event) => { setMaxPrice(event.target.value); setPage(1); }}><option value="">Any price</option><option value="200000">$200,000</option><option value="300000">$300,000</option><option value="500000">$500,000</option><option value="750000">$750,000</option></select></label><label className="filter-field"><span>Minimum beds</span><select aria-label="Minimum beds" className="live-input" value={minBeds} onChange={(event) => { setMinBeds(event.target.value); setPage(1); }}><option value="">Any bedrooms</option><option value="2">2+ bedrooms</option><option value="3">3+ bedrooms</option><option value="4">4+ bedrooms</option></select></label></div><div className="filter-footer"><span><Filter size={14} /> RealtyAPI.io search route ready</span><button className="button button-primary" type="submit" disabled={loading}><Search size={16} /> {loading ? "Searching…" : "Search properties"}</button></div>{error && <div className="form-error" role="alert"><span>{error}</span>{accessIssue === "auth" ? <Link href={signInHref} className="button button-primary">Sign in to continue</Link> : accessIssue === "organization" ? <Link href="/settings" className="text-button">Review organization access</Link> : null}</div>}</form>
-    <div className="split-layout search-split"><section className="panel"><header className="panel-heading"><div><h2>Search results</h2><p>{total ? `${total.toLocaleString()} source-backed listings` : "Paginated provider results with source-bound property handoff."}</p></div></header><div className="result-toolbar"><span>{results.length ? `Page ${page}` : "Awaiting search"}</span><div><button type="button" className="view-switch active">List</button><button type="button" className="view-switch" disabled>Map</button></div></div>{results.length ? <div className="live-results">{results.map((property) => <Link className="live-result" href={`/properties/${property.provider_property_id}?address=${encodeURIComponent(property.address)}`} key={property.provider_property_id}><div><strong>{property.address}</strong><span>{property.city}, {property.state} {property.zip_code} · {property.property_type}</span></div><div className="result-meta"><strong>{property.list_price ? `$${property.list_price.toLocaleString()}` : "Price unavailable"}</strong><span>{property.beds ?? "—"} bd · {property.baths ?? "—"} ba · {property.living_area ? `${property.living_area.toLocaleString()} sf` : "—"}</span><span className="result-provenance">Source: {property.source} · Updated {new Date(property.data_updated_at).toLocaleDateString()}</span></div><ArrowRight size={16} /></Link>)}</div> : <div className="empty-state"><span className="empty-icon"><Search size={22} /></span><h3>{error ? "Search could not be completed" : "No source records loaded"}</h3><p>{error || "Enter a location to retrieve live Realtor listings. No property record is inferred or seeded."}</p></div>}<div className="pagination"><button className="text-button" type="button" disabled={page <= 1 || loading} onClick={() => changePage(page - 1)}><ChevronLeft size={14} /> Previous</button><span>{results.length ? `Page ${page}` : "No page selected"}</span><button className="text-button" type="button" disabled={!hasNextPage || loading} onClick={() => changePage(page + 1)}>Next <ChevronRight size={14} /></button></div></section><section className="panel"><header className="panel-heading"><div><h2>Map exploration</h2><p>Only provider coordinates are placed on the map.</p></div></header><div className="map-placeholder"><MapPinned size={32} /><strong>{results.length ? "Map handoff available" : "Map awaits a search"}</strong><p>{results.length ? "Open a property to research its verified coordinates and history." : "Search with a city or ZIP to retrieve verified coordinates."}</p></div></section></div>
-    <section className="panel"><header className="panel-heading"><div><h2>Saved-search entry points</h2><p>Saved criteria remain organization-scoped and require authenticated persistence.</p></div></header><div className="saved-search-grid"><div><strong>Investment criteria fit</strong><p>Property-fit scoring uses documented deterministic inputs, not an AI estimate.</p></div><div><strong>Freshness controls</strong><p>Every result includes RealtyAPI.io provenance and retrieval time.</p></div><div><strong>Research handoff</strong><p>Open a listing by provider property id to begin property intelligence review.</p></div></div></section>
+    <div className="status-banner"><ShieldCheck size={18} /><p><strong>Primary property-data source: RealtyAPI.io.</strong> Server-side connectivity is checked when you search; no sample listings are shown. {authReady ? signedInEmail ? `Authenticated as ${signedInEmail}.` : "Sign in before submitting a live search." : "Checking workspace authentication…"}</p><span>REALTYAPI.IO</span></div>
+    <div className="panel filter-panel" role="search" onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void submit(undefined, 1); } }}>
+      <div className="filter-topline"><div><span className="eyebrow">Search criteria</span><p>Search by city, ZIP, neighborhood, or county. Every result retains provider freshness.</p></div><Link href="/search" className="text-button"><Filter size={15} /> Saved criteria</Link></div>
+      <div className="filters">
+        <label className="filter-field wide"><span>Location</span><input aria-label="Location" className="live-input" value={location} onChange={(event) => { setLocation(event.target.value); setPage(1); }} placeholder="Austin, TX or 78744" /></label>
+        <label className="filter-field"><span>Property category</span><select aria-label="Property category" className="live-input" value={propertyType} onChange={(event) => { setPropertyType(event.target.value); setPage(1); }}><option value="">All property types</option><option value="single_family">Single family</option><option value="condo">Condominium</option><option value="townhome">Townhome</option><option value="multi_family">Multi-family</option><option value="land">Land</option></select></label>
+        <label className="filter-field"><span>Listing status</span><select aria-label="Listing status" className="live-input" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="">Active &amp; pending</option><option value="for_sale">For sale</option><option value="pending">Pending</option><option value="sold">Sold</option></select></label>
+        <label className="filter-field"><span>Maximum price</span><select aria-label="Maximum price" className="live-input" value={maxPrice} onChange={(event) => { setMaxPrice(event.target.value); setPage(1); }}><option value="">Any price</option><option value="200000">$200,000</option><option value="300000">$300,000</option><option value="500000">$500,000</option><option value="750000">$750,000</option></select></label>
+        <label className="filter-field"><span>Minimum beds</span><select aria-label="Minimum beds" className="live-input" value={minBeds} onChange={(event) => { setMinBeds(event.target.value); setPage(1); }}><option value="">Any bedrooms</option><option value="2">2+ bedrooms</option><option value="3">3+ bedrooms</option><option value="4">4+ bedrooms</option></select></label>
+      </div>
+      <div className="filter-footer"><span><Filter size={14} /> RealtyAPI.io · availability checked on search</span><button className="button button-primary" type="button" onClick={() => void submit(undefined, 1)} disabled={loading}><Search size={16} /> {loading ? "Searching…" : "Search properties"}</button></div>
+      {error && <div className="form-error" role="alert"><span>{error}</span>{accessIssue === "auth" ? <Link href={signInHref} className="button button-primary">Sign in to continue</Link> : accessIssue === "organization" ? <Link href="/settings" className="text-button">Review organization access</Link> : null}</div>}
+    </div>
+    <div className="split-layout search-split"><section className="panel"><header className="panel-heading"><div><h2>Search results</h2><p>{total ? `${total.toLocaleString()} source-backed listings` : "Paginated provider results with source-bound property handoff."}</p></div></header><div className="result-toolbar"><span>{loading ? "Loading results…" : results.length ? `Page ${page}` : "Awaiting search"}</span><div><button type="button" className="view-switch active">List</button><button type="button" className="view-switch" disabled>Map</button></div></div>{loading ? <PropertyResultsSkeleton /> : results.length ? <div className="live-results">{results.map((property) => {
+      const retrievedAt = property.source_retrieved_at ?? property.data_updated_at;
+      return <Link className="live-result" href={`/properties/${property.organization_property_id}?address=${encodeURIComponent(property.address)}`} key={property.organization_property_id}><div><strong>{property.address}</strong><span>{property.city}, {property.state} {property.zip_code} · {property.property_type}</span></div><div className="result-meta"><strong>{property.list_price ? `$${property.list_price.toLocaleString()}` : "Price unavailable"}</strong><span>{property.beds ?? "—"} bd · {property.baths ?? "—"} ba · {property.living_area ? `${property.living_area.toLocaleString()} sf` : "—"}</span><span className="result-provenance">Source: {property.source} · {retrievedAt ? `Retrieved ${new Date(retrievedAt).toLocaleDateString()}` : "retrieval time UNKNOWN"}</span></div><ArrowRight size={16} /></Link>;
+    })}</div> : <div className="empty-state"><span className="empty-icon"><Search size={22} /></span><h3>{error ? "Search could not be completed" : "No source records loaded"}</h3><p>{error || "Enter a location to retrieve live Realtor listings. No property record is inferred or seeded."}</p></div>}<div className="pagination"><button className="text-button" type="button" disabled={page <= 1 || loading} onClick={() => changePage(page - 1)}><ChevronLeft size={14} /> Previous</button><span>{results.length ? `Page ${page}` : "No page selected"}</span><button className="text-button" type="button" disabled={!hasNextPage || loading} onClick={() => changePage(page + 1)}>Next <ChevronRight size={14} /></button></div></section><section className="panel"><header className="panel-heading"><div><h2>Map exploration</h2><p>Only provider coordinates are placed on the map.</p></div></header><div className="map-placeholder"><MapPinned size={32} /><strong>{results.length ? "Map handoff available" : "Map awaits a search"}</strong><p>{results.length ? "Open a property to research its verified coordinates and history." : "Search with a city or ZIP to retrieve verified coordinates."}</p></div></section></div>
+    <section className="panel"><header className="panel-heading"><div><h2>Saved-search entry points</h2><p>Saved criteria remain organization-scoped and require authenticated persistence.</p></div></header><div className="saved-search-grid"><div><strong>Investment criteria fit</strong><p>Property-fit scoring uses documented deterministic inputs, not an AI estimate.</p></div><div><strong>Freshness controls</strong><p>Every result includes RealtyAPI.io provenance and retrieval time.</p></div><div><strong>Research handoff</strong><p>Open a persisted organization property record to begin property intelligence review.</p></div></div></section>
   </>;
 }
