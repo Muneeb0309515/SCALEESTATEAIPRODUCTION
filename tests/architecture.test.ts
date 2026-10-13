@@ -28,6 +28,13 @@ describe("approved SCALEESTATE architecture", () => {
     expect(nextConfig).toContain("3000-iz9chabu4d2hf544lzxnj-e1a973e9.us3.manus.computer");
     expect(nextConfig).toContain("3000-ifk2c0egk8r030vh4b39k-2c723fe6.us1.manus.computer");
   });
+  it("does not claim the property provider is connected before server verification", () => {
+    const search = readFileSync("components/LivePropertySearch.tsx", "utf8");
+    expect(search).toContain("Server-side connectivity is checked when you search");
+    expect(search).not.toContain("Live provider connected.");
+    expect(search).not.toContain("RealtyAPI.io is configured server-side.");
+    expect(search).not.toContain("RealtyAPI.io search route ready");
+  });
   it("guards search resume and duplicate submissions", () => {
     const search = readFileSync("components/LivePropertySearch.tsx", "utf8");
     const styles = readFileSync("app/search-loading.css", "utf8");

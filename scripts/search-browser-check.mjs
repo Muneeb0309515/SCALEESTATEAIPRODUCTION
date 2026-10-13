@@ -17,7 +17,7 @@ try {
   await searchAlert.waitFor({ state: "visible" });
   const alertText = await searchAlert.innerText();
   assert.match(alertText, /Sign in to an approved workspace before searching live property records/i);
-  await page.getByRole("link", { name: "Review access state" }).waitFor({ state: "visible" });
+  await page.getByRole("link", { name: "Sign in to continue" }).waitFor({ state: "visible" });
   await page.getByRole("button", { name: "Search properties" }).waitFor({ state: "visible" });
   assert.equal(searchRequest, undefined, "The browser must not send a provider request without an authenticated session.");
 
@@ -28,11 +28,11 @@ try {
   await providerPage.addInitScript(({ key }) => {
     window.localStorage.setItem(key, JSON.stringify({ access_token: "fixture-access-token", refresh_token: "fixture-refresh-token", expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, token_type: "bearer", user: { id: "fixture-user", aud: "authenticated", role: "authenticated", email: "fixture@example.com", app_metadata: { organization_id: "org-fixture" } } }));
   }, { key: storageKey });
-  await providerPage.route("**/api/v1/providers/property-detail**", async (route) => {
+  await providerPage.route("**/api/v1/properties/fixture-organization-property-1", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ provider_property_id: "fixture-property-1", address: "123 Main St, Austin, TX 78744", city: "Austin", state: "TX", zip_code: "78744", property_type: "single_family", list_price: 275000, beds: 3, baths: 2, living_area: 1500, listing_status: "for_sale", source: "realtyapi", data_updated_at: "2026-08-28T00:00:00Z" }),
+      body: JSON.stringify({ organization_property_id: "fixture-organization-property-1", provider_property_id: "fixture-property-1", provider_listing_id: null, address: "123 Main St, Austin, TX 78744", city: "Austin", state: "TX", zip_code: "78744", property_type: "single_family", list_price: 275000, beds: 3, baths: 2, living_area: 1500, listing_status: "for_sale", source: "realtyapi", data_updated_at: "2026-08-28T00:00:00Z", source_retrieved_at: "2026-08-28T00:00:00Z", provenance: {}, photos: [] }),
     });
   });
   await providerPage.route("**/api/v1/providers/property-search**", async (route) => {
@@ -40,7 +40,7 @@ try {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        results: [{ provider_property_id: "fixture-property-1", address: "123 Main St", city: "Austin", state: "TX", zip_code: "78744", property_type: "single_family", list_price: 275000, beds: 3, baths: 2, living_area: 1500, source: "realtyapi", data_updated_at: "2026-08-28T00:00:00Z" }],
+        results: [{ organization_property_id: "fixture-organization-property-1", provider_property_id: "fixture-property-1", address: "123 Main St", city: "Austin", state: "TX", zip_code: "78744", property_type: "single_family", list_price: 275000, beds: 3, baths: 2, living_area: 1500, source: "realtyapi", data_updated_at: "2026-08-28T00:00:00Z" }],
         total: 1,
         page: 1,
         has_next_page: false,
@@ -54,9 +54,9 @@ try {
   await providerPage.getByRole("button", { name: "Search properties" }).click();
   await providerPage.getByRole("link", { name: /123 Main St/ }).waitFor({ state: "visible" });
   await providerPage.getByRole("button", { name: "Search properties" }).waitFor({ state: "visible" });
-  assert.match(await providerPage.locator(".result-provenance").innerText(), /Source: realtyapi · Updated/);
+  assert.match(await providerPage.locator(".result-provenance").innerText(), /Source: realtyapi · Retrieved/);
   await providerPage.getByRole("link", { name: /123 Main St/ }).click();
-  await providerPage.getByText("Source-backed record loaded.").waitFor({ state: "visible" });
+  await providerPage.getByText("Persisted source-backed record loaded.").waitFor({ state: "visible" });
   assert.match(await providerPage.locator(".fact-list").innerText(), /123 Main St, Austin, TX 78744/);
   assert.match(await providerPage.locator(".fact-list").innerText(), /realtyapi/);
   await providerPage.close();

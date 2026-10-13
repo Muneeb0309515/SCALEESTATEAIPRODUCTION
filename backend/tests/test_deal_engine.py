@@ -13,6 +13,7 @@ class DealEngineTests(unittest.TestCase):
     def test_equity_is_unknown_without_debt(self):
         result = calculate_analysis(AnalysisInput(estimated_market_value=calculated(300000)))
         self.assertEqual(result.equity.state, ResultState.UNKNOWN)
+        self.assertEqual(result.equity.classification, DataClassification.UNKNOWN)
         self.assertIsNone(result.equity.value)
     def test_margin_is_unknown_with_zero_purchase_price(self):
         result = calculate_analysis(AnalysisInput(expected_assignment_price=user_input(100000), purchase_contract_price=user_input(0)))
@@ -20,5 +21,15 @@ class DealEngineTests(unittest.TestCase):
     def test_ai_estimate_cannot_be_used_as_arv(self):
         result = calculate_analysis(AnalysisInput(arv=ProvenancedNumber(value=310000, classification=DataClassification.AI_ESTIMATE)))
         self.assertEqual(result.arv.state, ResultState.INSUFFICIENT_DATA)
+        self.assertEqual(result.arv.classification, DataClassification.UNKNOWN)
+
+    def test_user_provided_arv_is_not_mislabeled_as_weighted_comparable_value(self):
+        result = calculate_analysis(AnalysisInput(arv=user_input(300000)))
+        self.assertEqual(result.arv.state, ResultState.PROVIDED)
+        self.assertEqual(result.arv.value, 300000)
+        self.assertEqual(result.arv.classification, DataClassification.USER_INPUT)
+        self.assertIsNone(result.arv.formula)
+        self.assertEqual(result.arv.inputs["source"], "user")
+        self.assertIn("does not calculate", result.arv.reason)
 
 if __name__ == "__main__": unittest.main()
