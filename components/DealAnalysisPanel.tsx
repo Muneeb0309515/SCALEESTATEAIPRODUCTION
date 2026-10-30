@@ -222,7 +222,8 @@ export function DealAnalysisPanel() {
     } finally {
       if (requestId === calculationRevision.current) {
         setLoading(false);
-        if (requestController.current === controller) requestController.current = null;
+        if (requestController.current === controller)
+          requestController.current = null;
       }
     }
   }
@@ -235,31 +236,39 @@ export function DealAnalysisPanel() {
           any input clears prior results; missing values remain UNKNOWN or INSUFFICIENT_DATA.
         </p>
         <div className="analysis-input-grid">
-          {fields.map(field => (
-            <label className="analysis-input" key={field.key}>
-              <span>{field.label}</span>
-              <input
-                type="number"
-                step="any"
-                min={field.key === "mao_percentage" ? 0 : undefined}
-                max={field.key === "mao_percentage" ? 100 : undefined}
-                inputMode="decimal"
-                value={values[field.key] ?? ""}
-                onChange={event => {
-                  calculationRevision.current += 1;
-                  requestController.current?.abort();
-                  requestController.current = null;
-                  setLoading(false);
-                  setResult(null);
-                  setError("");
-                  setValues(current => ({
-                    ...current,
-                    [field.key]: event.target.value,
-                  }));
-                }}
-              />
-            </label>
-          ))}
+          {fields.map(field => {
+            const inputId = `deal-input-${field.key}`;
+            return (
+              <label
+                className="analysis-input"
+                htmlFor={inputId}
+                key={field.key}
+              >
+                <span>{field.label}</span>
+                <input
+                  id={inputId}
+                  type="number"
+                  step="any"
+                  min={field.key === "mao_percentage" ? 0 : undefined}
+                  max={field.key === "mao_percentage" ? 100 : undefined}
+                  inputMode="decimal"
+                  value={values[field.key] ?? ""}
+                  onChange={event => {
+                    calculationRevision.current += 1;
+                    requestController.current?.abort();
+                    requestController.current = null;
+                    setLoading(false);
+                    setResult(null);
+                    setError("");
+                    setValues(current => ({
+                      ...current,
+                      [field.key]: event.target.value,
+                    }));
+                  }}
+                />
+              </label>
+            );
+          })}
         </div>
         <div className="analysis-actions">
           <button
